@@ -1,0 +1,110 @@
+/* src/pages/auth/LoginMobile.css */
+
+/* =================================================================== */
+/* == PALET WARNA BARU: HIGH-CONTRAST TEAL (#13c2c2)            == */
+/* =================================================================== */
+.login-container-neumorphic {
+    --bg-color: #E6E7ED;
+    /* Latar belakang: Abu-abu netral yang bersih */
+    --shadow-dark: #A6ABBD;
+    /* Bayangan gelap: Jauh lebih gelap untuk kontras tinggi */
+    --shadow-light: #FFFFFF;
+    /* Bayangan terang: Putih bersih */
+    --accent-color: #13c2c2;
+    /* Warna Aksen: Teal cerah sesuai permintaan */
+    --text-color: #4D516D;
+    /* Warna Teks: Abu-abu tua yang tajam */
+    --error-color: #e74c3c;
+    /* Warna Error: Merah */
+
+    background-color: var(--bg-color);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* --- Indikator PIN Kustom --- */
+.pin-dots-container {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+}
+
+.pin-dot {
+    height: 18px;
+    width: 18px;
+    border-radius: 50%;
+    transition: all 0.3s ease-in-out;
+}
+
+.pin-dot-empty {
+    background: var(--bg-color);
+    box-shadow: inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light);
+    /* Cekungan lebih dalam */
+}
+
+.pin-dot-filled {
+    background: var(--accent-color);
+    box-shadow: 4px 4px 8px var(--shadow-dark),
+        -4px -4px 8px var(--shadow-light);
+    /* Timbul lebih jelas */
+}
+
+/* --- Keyboard Neumorphic dengan Kontras Tinggi --- */
+.keyboard-key-neumorphic {
+    height: 75px;
+    width: 75px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--bg-color);
+    /* BAYANGAN LEBIH TEGAS DAN JELAS */
+    box-shadow: -8px -8px 16px var(--shadow-light),
+        8px 8px 16px var(--shadow-dark);
+    font-size: 30px;
+    color: var(--text-color);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.1s ease-in-out;
+}
+
+/* Efek saat tombol ditekan (mencekung ke dalam) */
+.keyboard-key-neumorphic:active {
+    box-shadow: inset -6px -6px 12px var(--shadow-light),
+        inset 6px 6px 12px var(--shadow-dark);
+    font-size: 28px;
+    color: var(--accent-color);
+}
+
+/* --- Animasi Error --- */
+@keyframes shake {
+
+    10%,
+    90% {
+        transform: translate3d(-1px, 0, 0);
+    }
+
+    20%,
+    80% {
+        transform: translate3d(2px, 0, 0);
+    }
+
+    30%,
+    50%,
+    70% {
+        transform: translate3d(-4px, 0, 0);
+    }
+
+    40%,
+    60% {
+        transform: translate3d(4px, 0, 0);
+    }
+}
+
+.pin-error {
+    animation: shake 0.5s cubic-bezier(.36, .07, .19, .97) both;
+}
+
+.pin-error .pin-dot-filled {
+    background: var(--error-color);
+}
