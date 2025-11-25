@@ -7,6 +7,10 @@ dotenv.config()
 const opts = {
     logger: {
         level: 'info'
+    },
+    https: {
+        key: fs.readFileSync(join(import.meta.url, 'ssl', 'adyawinsa.com.key')),
+        cert: fs.readFileSync(join(import.meta.url, 'ssl', 'sectigo_adyawinsa.com.crt')),
     }
 }
 
