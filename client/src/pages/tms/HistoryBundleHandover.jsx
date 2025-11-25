@@ -9,6 +9,9 @@ import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import { useSelector } from "react-redux";
 
+const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
+
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
@@ -64,7 +67,7 @@ const HistoryBundleHandover = () => {
     const loadData = async () => {
         try {
             setLoading(true)
-            const res = await fetch(`http://localhost:3200/api/v1/tms/listbundle?checkpoint=${cPoint}&checkpoint_second=${cPointSecond}`);
+            const res = await fetch(`${backEndUrl}/tms/listbundle?checkpoint=${cPoint}&checkpoint_second=${cPointSecond}`);
             const json = await res.json();
 
 
@@ -91,7 +94,7 @@ const HistoryBundleHandover = () => {
         try {
             setLoading(true);
             const response = await fetch(
-                `http://localhost:3200/api/v1/tms/listbundle/detail?documentno=${documentno}`
+                `${backEndUrl}/tms/listbundle/detail?documentno=${documentno}`
             );
             const result = await response.json();
 

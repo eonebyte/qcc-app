@@ -14,6 +14,8 @@ import LayoutGlobal from '../../components/layouts/LayoutGlobal';
 import { useRef } from 'react';
 import Highlighter from 'react-highlight-words';
 
+const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
+
 const { Title, Text } = Typography;
 
 const formatDateTime = (isoString) => {
@@ -161,7 +163,7 @@ const ProgressShipment = () => {
         try {
             const { current, pageSize } = params.pagination || pagination;
 
-            const response = await fetch(`http://localhost:3200/api/v1/tms/history?page=${current}&limit=${pageSize}`);
+            const response = await fetch(`${backEndUrl}/tms/history?page=${current}&limit=${pageSize}`);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const result = await response.json();
 

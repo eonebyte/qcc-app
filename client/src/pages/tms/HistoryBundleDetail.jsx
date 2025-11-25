@@ -9,6 +9,7 @@ import LayoutGlobal from "../../components/layouts/LayoutGlobal";
 import { useSelector } from "react-redux";
 pdfMake.vfs = pdfFonts.vfs;
 
+const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
 
 const HistoryBundleDetail = () => {
     const user = useSelector((state) => state.auth.user);
@@ -79,7 +80,7 @@ const HistoryBundleDetail = () => {
     // ======================================================
     const uploadProps = {
         name: 'file',
-        action: `http://localhost:3200/api/v1/attachment/bundle/${documentno}`,
+        action: `${backEndUrl}/attachment/bundle/${documentno}`,
         showUploadList: false,
         onChange(info) {
             if (info.file.status === 'done') {
@@ -202,7 +203,7 @@ const HistoryBundleDetail = () => {
                 okText: "Yes",
                 cancelText: "No",
                 onOk: async () => {
-                    const res = await fetch(`http://localhost:3200/api/v1/attachment/bundle/${bundleNo}`, {
+                    const res = await fetch(`${backEndUrl}/attachment/bundle/${bundleNo}`, {
                         method: 'DELETE',
                     });
 

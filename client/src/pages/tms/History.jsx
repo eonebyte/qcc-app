@@ -7,6 +7,7 @@ import { DateTime } from 'luxon';
 import LayoutGlobal from '../../components/layouts/LayoutGlobal';
 import { useSelector } from 'react-redux';
 const { Text, Paragraph, Link } = Typography;
+
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
 
 const formatDateTime = (isoString) => {
