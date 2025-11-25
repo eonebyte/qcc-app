@@ -3,11 +3,11 @@
 export default async (server, opts) => {
     server.post('/handover', async (request, reply) => {
         try {
-            const { checkpoint } = request.query;
+            const { checkpoint, isarrived } = request.query;
             const body = request.body;
-            const userId = request.user.id;
+            const userId = request.user.ad_user_id;
 
-            const result = await server.tms.toHandover(server, body, userId, checkpoint);
+            const result = await server.tms.toHandover(server, body, userId, checkpoint, isarrived);
 
             reply.send({ message: 'Handover process successful.', data: result });
 

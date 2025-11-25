@@ -10,9 +10,10 @@ export default fp(async (fastify, opts) => {
     fastify.register(secureSession, {
         sessionName: 'session',
         key: fs.readFileSync(join(import.meta.url, '..', 'eonebyte')), // Path dari plugins/ kembali ke root
+        expiry: 24 * 60 * 60, // Default 1 day
         cookie: {
             path: '/',
             httpOnly: true,
         }
     });
-});
+}, { name: 'session-plugin' });

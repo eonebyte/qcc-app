@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
-import { SearchOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { SearchOutlined, CheckCircleFilled, CloseCircleFilled, RollbackOutlined } from '@ant-design/icons';
 import { Button, Checkbox, Input, Modal, Select, Space, Table, notification } from 'antd';
 import Highlighter from 'react-highlight-words';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import LayoutGlobal from '../../components/layouts/LayoutGlobal';
 import { useSelector } from 'react-redux';
+import LocationComponent from '../../components/LocationComponent';
+import { useNavigate } from 'react-router-dom';
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
 
@@ -41,15 +43,40 @@ const HANDOVER_CONFIGS = {
 
 
 const ListHandover = () => {
+    const navigate = useNavigate();
+    const [api, contextHolder] = notification.useNotification();
+    const openNotificationWithIcon = (type, res) => {
+        console.log('res : ', res);
+
+        api[type]({
+            message: 'Handover Success',
+            description: (
+                <span
+                    style={{ fontWeight: "bold", cursor: "pointer", color: "#1677ff" }}
+                    onClick={() => navigate(`/history/detail?documentno=${res.data.data.bundleNo}`)}
+                >
+                    {res.data.data.bundleNo}
+                </span>
+            )
+            // navigate('/history')
+            // 'This is the content of the notification. This is the content of the notification. This is the content of the notification.',
+        });
+    };
+
     const user = useSelector((state) => state.auth.user);
     const role = user.title;
 
     const configHandover = HANDOVER_CONFIGS[role];
 
+    const coordinates = useSelector((state) => state.location.coordinates);
+
+
+
 
     const [searchText, setSearchText] = useState('');
     const [searchedColumn, setSearchedColumn] = useState('');
     const [data, setData] = useState([]);
+    const [dataMktToFat, setDataMktToFat] = useState([]);
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
     const searchInput = useRef(null);
@@ -64,6 +91,7 @@ const ListHandover = () => {
     const [tnkbs, setTnkbs] = useState([]);
     const [selectedDriverId, setSelectedDriverId] = useState(null);
     const [selectedTnkbId, setSelectedTnkbId] = useState(null);
+    const [fieldTo, setFieldTo] = useState([]);
 
     useEffect(() => {
         fetchData();
@@ -98,15 +126,44 @@ const ListHandover = () => {
             if (res.data.data && res.data.data.success) {
                 const rawData = res.data.data.data;
 
-                console.log(rawData);
-
-
-                const flattenedData = rawData.map(item => ({
+                let flattenedData = rawData.map(item => ({
                     ...item,
                     key: item.m_inout_id,
-                    arrived: false
+                    arrived: false,
+                    to: getRecipientTo(item.checkpoin_id, item.arrivedat_customer),
+                }))
+                // .filter(item => {
+                //     if (Number(item.checkpoin_id) === 11) {
+                //         return !!item.sppno; // wajib ada sppno kalau checkpoint 11
+                //     }
+                //     return true;
+                // });
+
+                // 🔹 Pisahkan data checkpoint 11 & lainnya
+                const dataCheckpoint11 = flattenedData.filter(item => Number(item.checkpoin_id) === 11);
+                const dataLain = flattenedData.filter(item => Number(item.checkpoin_id) !== 11);
+
+                // 🔹 Distinct hanya untuk checkpoint 11 (berdasarkan sppno)
+                const distinctCheckpoint11 = Array.from(
+                    new Map(dataCheckpoint11.map(item => [item.sppno, item])).values()
+                );
+
+
+                const distincTo = Array.from(
+                    new Map(flattenedData.map(item => [item.to, item])).values()
+                ).map(item => ({
+                    text: item.to,
+                    value: item.to
                 }));
-                setData(flattenedData);
+
+
+                setFieldTo(distincTo);
+
+                // 🔹 Gabungkan lagi
+                const finalData = [...distinctCheckpoint11, ...dataLain];
+
+                setDataMktToFat(dataCheckpoint11);
+                setData(finalData);
             } else {
                 notification.warning({
                     message: 'Info',
@@ -147,15 +204,25 @@ const ListHandover = () => {
         return checkpointId;
     };
 
+    const determineIsArrivedCustomer = (arrivedStatus) => {
+        return arrivedStatus;
+    };
+
     let targetCheckpointId = null;
+    let tArrivedState = null;
     let checkpointModal = null;
+    let isArrivedCustomer = null;
 
     // Hanya hitung jika ada item yang dipilih
     if (selectedItemsForSubmit.length > 0) {
         const firstItem = selectedItemsForSubmit[0];
         targetCheckpointId = firstItem.checkpoin_id;
+        tArrivedState = firstItem.arrivedat_customer;
         checkpointModal = determineToActor(targetCheckpointId);
+        isArrivedCustomer = determineIsArrivedCustomer(tArrivedState);
+
     }
+
 
     const executeSubmit = async () => {
         if (checkpointModal === '3' && (!selectedDriverId || !selectedTnkbId)) {
@@ -197,15 +264,35 @@ const ListHandover = () => {
 
         setIsSubmitting(true);
         try {
-            const payload = configHandover.buildPayload(selectedItemsForSubmit, selectedDriverId, selectedTnkbId);
-            const submitUrl = `${backEndUrl}/tms/handover?checkpoint=${checkpoint}`;
+            let payload = configHandover.buildPayload(selectedItemsForSubmit, selectedDriverId, selectedTnkbId);
+
+            // Jika checkpoint 11 =  proses dari Mkt ke FAT, filter data berdasarkan sppno yang dipilih
+            // console.log(checkpoint);
+
+            if (checkpoint === '11' && dataMktToFat.length > 0) {
+                const dataMkt = dataMktToFat.filter(item => item.sppno === payload.data[0].sppno);
+                payload.data = dataMkt;
+            }
+
+            console.log('arrived state : ', isArrivedCustomer);
+
+
+            const submitUrl = `${backEndUrl}/tms/handover?checkpoint=${checkpoint}&isarrived=${isArrivedCustomer}`;
+
+            //Wajib isi location saat driver sampai di customer
+            if (isArrivedCustomer === 'N' && checkpointModal === '5') {
+                for (const pData of payload.data) {
+                    pData.lat_customer = coordinates.latitude
+                    pData.long_customer = coordinates.longitude
+                }
+            }
+
+
             const res = await axios.post(submitUrl, payload, { withCredentials: true });
 
 
-            notification.success({
-                message: 'Sukses',
-                description: res.data.message || 'Handover berhasil!'
-            });
+
+            openNotificationWithIcon('success', res)
 
             const submittedIds = new Set(selectedItemsForSubmit.map(d => d.m_inout_id));
             setData(currentData =>
@@ -222,6 +309,9 @@ const ListHandover = () => {
             });
         } finally {
             setIsSubmitting(false);
+            // if (checkpointModal === 1) {
+            //     navigate('/history')
+            // }
         }
     };
 
@@ -242,7 +332,10 @@ const ListHandover = () => {
     const handleReset = (clearFilters) => {
         clearFilters();
         setSearchText('');
+        // setSearchedColumn('');
     };
+
+
     const handleTableChange = (newPagination) => {
         setPagination(newPagination);
     };
@@ -275,15 +368,46 @@ const ListHandover = () => {
     // Menghitung total item yang dipilih
     const totalSelectedCount = data.filter(d => d.arrived).length;
 
-    const handleSelectAll = (e) => {
-        const { checked } = e.target;
-        setData(prevData =>
-            prevData.map(item => ({ ...item, arrived: checked }))
+    // const handleSelectAll = (e) => {
+    //     const { checked } = e.target;
+    //     setData(prevData =>
+    //         prevData.map(item => ({ ...item, arrived: checked }))
+    //     );
+    // };
+
+    // const isAllSelected = data.length > 0 && totalSelectedCount === data.length;
+
+
+    const displayedData = useMemo(() => { // <--- Perubahan di sini
+        if (!searchText || !searchedColumn) { // Periksa juga searchedColumn
+            return data;
+        }
+        // Pastikan logic onFilter sama dengan yang di getColumnSearchProps
+        return data.filter(record =>
+            record[searchedColumn]?.toString().toLowerCase().includes(searchText.toLowerCase())
         );
+    }, [data, searchText, searchedColumn]);
+
+    const handleSelectAll = (e) => { // <--- Perubahan di sini
+        const { checked } = e.target;
+
+        setData(prevData => {
+            // Buat Set berisi ID dari item yang *saat ini terlihat* (difilter)
+            const visibleItemIds = new Set(displayedData.map(item => item.m_inout_id));
+
+            return prevData.map(item => {
+                // Jika item adalah bagian dari data yang terlihat, update status 'arrived'
+                if (visibleItemIds.has(item.m_inout_id)) {
+                    return { ...item, arrived: checked };
+                }
+                // Jika tidak, biarkan statusnya seperti semula
+                return item;
+            });
+        });
     };
 
-    const isAllSelected = data.length > 0 && totalSelectedCount === data.length;
-
+    // Tentukan apakah semua item yang *terlihat* saat ini sudah dipilih
+    const isAllSelected = displayedData.length > 0 && displayedData.every(item => item.arrived);
 
     if (!configHandover) {
         return (
@@ -296,20 +420,53 @@ const ListHandover = () => {
         );
     }
 
-    const getRecipientTo = (checkpoinId) => {
-        switch (String(checkpoinId)) { // Menggunakan String() agar aman jika nilainya angka atau teks
-            case '3':
+    const getRecipientTo = (checkpoinId, arrivedState) => {
+        const key = `${String(checkpoinId)}-${String(arrivedState)}`;
+
+        switch (key) { // Menggunakan String() agar aman jika nilainya angka atau teks
+            case '3-N':
                 return 'DRIVER';
-            case '5':
+            case '5-N':
+                return 'CUSTOMER';
+            case '5-Y':
                 return 'DPK';
-            case '7':
+            case '7-Y':
                 return 'DELIVERY';
-            case '9':
+            case '9-Y':
                 return 'MKT';
-            case '11':
+            case '11-Y':
                 return 'FAT';
             default:
                 return 'DPK'; // Untuk semua nilai lain yang tidak cocok
+        }
+    };
+
+    const getDocumentNoColumn = () => {
+        if (role === 'marketing') {
+            return [
+                {
+                    title: 'Document No',
+                    dataIndex: 'documentno',
+                    key: 'documentno',
+                    ...getColumnSearchProps('documentno'),
+                },
+                {
+                    title: 'SPP No',
+                    dataIndex: 'sppno',
+                    key: 'sppno',
+                    ...getColumnSearchProps('sppno'),
+                }
+            ];
+        } else {
+            // Jika bukan marketing, misalnya hanya 1 kolom Document No saja
+            return [
+                {
+                    title: 'Document No',
+                    dataIndex: 'documentno',
+                    key: 'documentno',
+                    ...getColumnSearchProps('documentno'),
+                }
+            ];
         }
     };
 
@@ -324,30 +481,33 @@ const ListHandover = () => {
         {
             title: 'To',
             key: 'to',
+            dataIndex: 'to',
             width: 70,
             align: 'center',
-            render: (text, record) => getRecipientTo(record.checkpoin_id)
+            filters: fieldTo,
+            onFilter: (value, record) => record.address.startsWith(value),
+            filterSearch: true,
+            // ...getColumnSearchProps('to'),
         },
         {
             title: <Checkbox checked={isAllSelected} onChange={handleSelectAll} />,
             key: 'selection',
             width: 50,
             align: 'center',
-            render: (_, record) => (
-                <Checkbox
-                    checked={record.arrived}
-                    onChange={(e) => handleCheckArrival(record.m_inout_id, e.target.checked)}
-                >
-                    {/* Ikon bisa ditambahkan di sini jika perlu, atau dikosongkan */}
-                </Checkbox>
-            ),
+            render: (_, record) => {
+                // Checkpoin jika sppno kosong tidak bisa dicentang dari mkt ke fat
+                return (
+                    <Checkbox
+                        disabled={record.checkpoin_id === '11' ? record.sppno ? false : true : false}
+                        checked={record.arrived}
+                        onChange={(e) => handleCheckArrival(record.m_inout_id, e.target.checked)}
+                    >
+                        {/* Ikon bisa ditambahkan di sini jika perlu, atau dikosongkan */}
+                    </Checkbox>
+                )
+            },
         },
-        {
-            title: 'Document No',
-            dataIndex: 'documentno',
-            key: 'documentno',
-            ...getColumnSearchProps('documentno'),
-        },
+        ...getDocumentNoColumn(),
         {
             title: 'Customer',
             dataIndex: 'customer',
@@ -356,34 +516,40 @@ const ListHandover = () => {
         },
         {
             title: 'Plan Time',
-            dataIndex: 'planTime',
-            key: 'planTime',
-            render: (text) => dayjs(text).format('DD/MM/YYYY HH:mm'),
+            dataIndex: 'plantime',
+            key: 'plantime',
+            render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
         },
-        // {
-        //     title: 'Status',
-        //     dataIndex: 'arrived',
-        //     key: 'status',
-        //     width: 100,
-        //     render: (arrived) => (
-        //         arrived
-        //             ? <CheckCircleFilled style={{ color: '#00a854', fontSize: '18px' }} />
-        //             : <CloseCircleFilled style={{ color: '#f04134', fontSize: '18px' }} />
-        //     )
-        // }
+        {
+            title: 'Action',
+            dataIndex: 'arrived',
+            key: 'status',
+            width: 100,
+            render: (_, record) => {
+                console.log('record : ', record);
+
+                if (record.checkpoin_id == '5' && record.arrivedat_customer == 'N') {
+                    return '-'
+                }
+
+                return (
+                    <Button icon={<RollbackOutlined />} size='small' color='danger' variant='solid'>
+                        Return
+                    </Button>
+                )
+            }
+        }
     ];
-
-
-
 
 
     return (
         <>
+            {contextHolder}
             <LayoutGlobal>
                 {/* --- PERUBAHAN 6: Properti `expandable` dihapus dari Tabel --- */}
                 <Table
                     columns={columns}
-                    dataSource={data}
+                    dataSource={displayedData}
                     loading={loading}
                     pagination={pagination}
                     onChange={handleTableChange}
@@ -410,18 +576,29 @@ const ListHandover = () => {
                     cancelText="Cancel"
                     width={600}
                     okButtonProps={{
-                        disabled: checkpointModal === '3' && (!selectedDriverId || !selectedTnkbId)
+                        disabled: checkpointModal === '3' && (!selectedDriverId || !selectedTnkbId) || (checkpointModal === '5' && coordinates == null && isArrivedCustomer === 'N')
                     }}
                 >
-                    <p>Anda akan menyerahkan daftar Surat Jalan berikut kepada driver. Silakan pilih Driver dan TNKB.</p>
+                    <p>Apakah Anda yakin akan menyerahkan daftar Surat Jalan berikut ?</p>
+                    {checkpointModal === '5' && isArrivedCustomer == 'N' ? <LocationComponent /> : null}
                     <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid #f0f0f0', padding: '8px 16px', marginTop: '16px', borderRadius: '4px' }}>
                         <ol style={{ paddingLeft: '20px' }}>
-                            {selectedItemsForSubmit.map(item => (
-                                <li key={item.m_inout_id}>
+                            {checkpointModal === '11' ?
+                                dataMktToFat.map(item => {
+                                    if (item.sppno === selectedItemsForSubmit[0].sppno) {
+                                        return (<li key={item.m_inout_id}>
+                                            <strong>{item.documentno}</strong> ({item.customer})
+                                        </li>)
+                                    }
+                                })
+                                :
+                                selectedItemsForSubmit.map(item => (
+                                    <li key={item.m_inout_id}>
 
-                                    <strong>{item.documentno}</strong> ({item.customer})
-                                </li>
-                            ))}
+                                        <strong>{item.documentno}</strong> ({item.customer})
+                                    </li>
+                                ))
+                            }
                         </ol>
                     </div>
 
@@ -438,8 +615,8 @@ const ListHandover = () => {
                                     optionFilterProp="children"
                                 >
                                     {drivers.map(driver => (
-                                        <Select.Option key={driver.AD_USER_ID} value={driver.AD_USER_ID}>
-                                            {driver.NAME}
+                                        <Select.Option key={driver.ad_user_id} value={driver.ad_user_id}>
+                                            {driver.name}
                                         </Select.Option>
                                     ))}
                                 </Select>

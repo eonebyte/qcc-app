@@ -8,8 +8,9 @@ export default function FooterAdmin() {
                 textAlign: "center",
             }}
         >
-            Fauzi Design ©{new Date().getFullYear()} Created by Ant Design,{" "}
-            <svg
+            {/* Fauzi Design ©{new Date().getFullYear()} Created by Ant Design,{" "} */}
+            PT. Adyawinsa Plastics Industry ©{new Date().getFullYear()} | QCC Edition{" "}
+            {/* <svg
                 width="18px"
                 height="18px"
                 viewBox="0 0 30 29"
@@ -35,8 +36,8 @@ export default function FooterAdmin() {
                         fill="#53C1DE"
                     ></path>{" "}
                 </g>
-            </svg>{" "}
-            & &#10084;
+            </svg>{" "} */}
+            {/* & &#10084; */}
         </Footer>
     );
 }

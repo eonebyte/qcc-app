@@ -4,11 +4,13 @@ import fp from 'fastify-plugin';
 export default fp(async (fastify, opts) => {
     // Hook ini berjalan untuk SETIAP permintaan SETELAH plugin sesi
     fastify.addHook('preHandler', (request, reply, done) => {
+        console.log('session : ', request.session.get('user'));
+        
         // Jika request.session ada (dari plugin session), maka ambil data user
         if (request.session) {
             const user = request.session.get('user');
             console.log('Auth Hook - Retrieved user from session:', user);
-            
+
             request.user = user || null;
         } else {
             // Jika plugin session belum berjalan atau gagal, pastikan request.user ada
@@ -16,4 +18,6 @@ export default fp(async (fastify, opts) => {
         }
         done();
     });
+}, {
+    dependencies: ['session-plugin']
 });

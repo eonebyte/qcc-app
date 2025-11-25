@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Layout, theme, ConfigProvider, Menu, Button, Flex, message, Dropdown, Space, Avatar, Typography } from "antd";
 import PropTypes from "prop-types";
@@ -6,8 +6,7 @@ import FooterAdmin from "./FooterAdmin";
 import { useDispatch, useSelector } from "react-redux";
 import HeaderGlobal from "./HeaderGlobal";
 import { toggleDarkMode } from "../../states/reducers/themeSlice";
-import { AppstoreOutlined, DownOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoonOutlined, SunOutlined, TagFilled, TruckFilled } from '@ant-design/icons';
-import WarehouseIcon from '@mui/icons-material/Warehouse';
+import { AppstoreOutlined, DeliveredProcedureOutlined, DownOutlined, FieldTimeOutlined, FileExclamationOutlined, FolderAddOutlined, HistoryOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoonOutlined, SunOutlined, TruckFilled } from '@ant-design/icons';
 import { logout } from '../../states/reducers/authSlice';
 const { Text } = Typography;
 const { Header, Footer, Sider, Content } = Layout;
@@ -20,30 +19,104 @@ const items = [
         icon: <AppstoreOutlined />
     },
     {
+        key: "/outstanding",
+        label: "Outstanding",
+        icon: <FileExclamationOutlined />,
+        roles: ['admin', 'delivery', 'dpk', 'fat', 'marketing']
+    },
+    {
+        key: "/receipt",
+        label: "Receipt",
+        icon: <FolderAddOutlined />,
+        children: [
+            {
+                key: '/receipt/delivery/from/dpk',
+                label: 'from DPK',
+                roles: ['delivery']
+            },
+            {
+                key: '/receipt/dpk/from/delivery',
+                label: 'from Delivery',
+                roles: ['dpk']
+            },
+            {
+                key: '/receipt/dpk/from/driver',
+                label: 'from Driver',
+                roles: ['dpk']
+            },
+            {
+                key: '/receipt/driver/from/dpk',
+                label: 'from DPK',
+                roles: ['driver']
+            },
+            {
+                key: '/receipt/mkt/from/delivery',
+                label: 'from Delivery',
+                roles: ['marketing']
+            },
+            {
+                key: '/receipt/fat/from/mkt',
+                label: 'from Marketing',
+                roles: ['fat']
+            },
+        ],
+        roles: ['admin', 'delivery', 'dpk', 'driver', 'fat', 'marketing']
+    },
+    {
+        key: "/list/handover",
+        label: "Handover",
+        icon: <DeliveredProcedureOutlined />,
+        children: [
+            {
+                key: '/handover/delivery/to/dpk',
+                label: 'to DPK',
+                roles: ['delivery']
+            },
+            {
+                key: '/handover/delivery/to/mkt',
+                label: 'to MKT',
+                roles: ['delivery']
+            },
+            {
+                key: '/handover/dpk/to/driver',
+                label: 'to Driver',
+                roles: ['dpk']
+            },
+            {
+                key: '/handover/dpk/to/delivery',
+                label: 'to Delivery',
+                roles: ['dpk']
+            },
+            {
+                key: '/handover/checkin/customer',
+                label: 'Check In Customer',
+                roles: ['driver']
+            },
+            {
+                key: '/handover/mkt/to/fat',
+                label: 'to Fat',
+                roles: ['marketing']
+            },
+        ],
+        roles: ['admin', 'delivery', 'dpk', 'driver', 'marketing']
+    },
+    {
+        key: "/history",
+        label: "History",
+        icon: <HistoryOutlined />,
+        roles: ['delivery', 'dpk', 'driver', 'marketing', 'fat']
+    },
+    {
+        key: "/progress-shipment",
+        label: "Progress Shipment",
+        icon: <FieldTimeOutlined />,
+        roles: ['admin', 'delivery', 'dpk', 'fat', 'marketing']
+    },
+    {
         key: "5",
         label: "Tracking",
         icon: <TruckFilled />,
         children: [
-            {
-                key: "/receipt",
-                label: "Receipt",
-                roles: ['admin', 'delivery', 'dpk', 'driver', 'fat','marketing']
-            },
-            {
-                key: "/list/handover",
-                label: "Handover",
-                roles: ['admin', 'delivery', 'dpk', 'driver', 'marketing']
-            },
-            {
-                key: "/history",
-                label: "History",
-                roles: []
-            },
-            {
-                key: "/progress-shipment",
-                label: "Progress Shipment",
-                roles: ['admin', 'delivery', 'dpk','fat', 'marketing']
-            },
 
         ],
     },
@@ -54,17 +127,17 @@ const boxStyle = {
     width: '100%',
 };
 
-const findParentKey = (path, currentItems) => {
-    for (const item of currentItems) {
-        if (item.children) {
-            const hasChild = item.children.some(child => child.key === path);
-            if (hasChild) {
-                return item.key;
-            }
-        }
-    }
-    return null;
-};
+// const findParentKey = (path, currentItems) => {
+//     for (const item of currentItems) {
+//         if (item.children) {
+//             const hasChild = item.children.some(child => child.key === path);
+//             if (hasChild) {
+//                 return item.key;
+//             }
+//         }
+//     }
+//     return null;
+// };
 
 
 function LayoutGlobal({ children }) {
@@ -137,20 +210,22 @@ function LayoutGlobal({ children }) {
     const navigateTo = useNavigate();
     const locationPath = useLocation();
 
-
-    const [selectedKeys, setSelectedKeys] = useState([locationPath.pathname]);
-
-    const [openKeys, setOpenKeys] = useState(() => {
-        // Saat pertama kali load, buka menu induk dari halaman yang aktif
-        const parentKey = findParentKey(locationPath.pathname, visibleItems);
-        return parentKey ? [parentKey] : [];
-    });
-
-
-    const handleOpenChange = (keys) => {
-        // `keys` adalah array dari key sub-menu yang sedang terbuka
-        setOpenKeys(keys);
+    const mapPathToKey = (pathname) => {
+        if (pathname.startsWith("/history")) return "/history";
+        if (pathname.startsWith("/list/handover")) return "/list/handover";
+        if (pathname.startsWith("/receipt")) return "/receipt";
+        if (pathname.startsWith("/outstanding")) return "/outstanding";
+        if (pathname === "/") return "/";
+        return pathname; // fallback
     };
+
+    const [selectedKeys, setSelectedKeys] = useState([mapPathToKey(locationPath.pathname)]);
+
+    useEffect(() => {
+        setSelectedKeys([mapPathToKey(locationPath.pathname)]);
+    }, [locationPath.pathname]);
+
+
 
     const handleClick = () => {
         dispatch(toggleDarkMode());
@@ -161,10 +236,26 @@ function LayoutGlobal({ children }) {
         navigateTo(key);
     };
 
+    const allOpenKeys = visibleItems
+        .filter(item => item.children && item.children.length > 0)
+        .map(item => item.key);
+
+    const [openKeys, setOpenKeys] = useState(allOpenKeys);
+
+    const handleOpenChange = (keys) => {
+        setOpenKeys(keys);
+    };
+
+
     return (
         <ConfigProvider
             theme={{
                 algorithm: isDarkMode ? darkAlgorithm : defaultAlgorithm,
+                components: {
+                    Layout: {
+                        headerHeight: 45, // default 64, kita kecilin jadi 48
+                    },
+                },
             }}
         >
             <Layout style={{ minHeight: "100vh", margin: "0" }}>

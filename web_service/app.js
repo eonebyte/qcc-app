@@ -5,6 +5,9 @@ import fs from 'node:fs';
 import { join } from 'desm'
 import fastifyStatic from '@fastify/static';
 import dotenv from 'dotenv'
+import multipart from "@fastify/multipart";
+
+
 
 dotenv.config()
 
@@ -18,8 +21,9 @@ export async function build(opts = {}) {
 
     await app.register(cors, {
         // origin: `${BASE_URL_CLIENT}:${BASE_PORT_CLIENT}`,
-        origin: 'http://localhost:5173', 
-        credentials: true
+        origin: 'http://localhost:5173',
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     });
 
     // app.register(import('@fastify/secure-session'), {
@@ -34,7 +38,7 @@ export async function build(opts = {}) {
     //     }
     // });
 
-    await app.register(await import('@fastify/postgres'), {
+    await app.register((await import('@fastify/postgres')).default, {
         connectionString: `postgres://${DB_USER_POSTGRES}:${DB_PASSWORD_POSTGRES}@${DB_HOST_POSTGRES}/${DB_NAME_POSTGRES}`,
     });
     // Test PostgreSQL connection
@@ -43,10 +47,20 @@ export async function build(opts = {}) {
     console.log('Connected to PostgreSQL successfully');
     client.release();
 
+    await app.register(multipart);
+
+
+    await app.register(fastifyStatic, {
+        root: join(import.meta.url, 'uploads'),
+        prefix: '/files/',
+        decorateReply: false
+    });
+
     await app.register(fastifyStatic, {
         root: join(import.meta.url, '../client/dist'), // Menyesuaikan path ke folder 'dist'
         prefix: '/', // Semua file di folder dist akan dapat diakses melalui prefix ini
     });
+
 
     app.get('/', async (request, reply) => {
         return reply.sendFile('index.html'); // Mengakses file index.html di folder dist

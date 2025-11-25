@@ -4,7 +4,7 @@ export default async (server, opts) => {
             // Ekstrak payload yang lebih detail dari body request frontend
             const { action, m_inout_id, handoverKey, role } = request.body;
             // Asumsi Anda memiliki user ID di request, misalnya dari plugin otentikasi
-            const userId = request.user.id;
+            const userId = request.user.ad_user_id;
 
             // Validasi input dasar
             if (!action || !m_inout_id || !handoverKey || !role) {

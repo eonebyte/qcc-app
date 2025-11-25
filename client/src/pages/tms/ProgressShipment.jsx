@@ -20,15 +20,21 @@ const formatDateTime = (isoString) => {
     if (!isoString) return null;
     try {
         const date = new Date(isoString);
-        return date.toLocaleString('id-ID', {
-            day: '2-digit', month: 'long', year: 'numeric',
-            hour: '2-digit', minute: '2-digit'
-        });
+
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0'); // bulan mulai dari 0
+        const year = date.getFullYear();
+
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+
+        return `${day}-${month}-${year} ${hours}:${minutes}`;
     } catch (error) {
         console.error("Invalid date format:", error);
         return null;
     }
 };
+
 
 const formatTime = (isoString) => {
     if (!isoString) return '-';
@@ -91,6 +97,7 @@ const ProgressShipment = () => {
             // aman-in property names: terima berbagai variasi huruf besar/kecil
             const id = item.m_inout_id || item.M_INOUT_ID || item.adw_trackingsj_id || item.id || (dataIndex + startIndex + 1);
             const documentno = item.documentno || item.documentno || item.documentno || item.docNo || '';
+            const customer = item.customer;
 
             const flow = stepDefinitions.map((step, stepIndex) => {
                 const handoverTimestamp = item[step.handoverKey];
@@ -143,6 +150,7 @@ const ProgressShipment = () => {
                 m_inout_id: id,
                 no: startIndex + dataIndex + 1,
                 docNo: documentno,
+                customer: customer,
                 flow
             };
         });
@@ -156,6 +164,9 @@ const ProgressShipment = () => {
             const response = await fetch(`http://localhost:3200/api/v1/tms/history?page=${current}&limit=${pageSize}`);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const result = await response.json();
+
+            console.log('Raw API response:', result);
+
 
             // Robust parsing: terima banyak bentuk response
             let payload = [];
@@ -184,6 +195,9 @@ const ProgressShipment = () => {
             if (!Array.isArray(payload)) payload = [];
 
             const transformed = transformApiData(payload, current, pageSize);
+
+            console.log('transformed data:', transformed);
+
             setShipmentData(transformed);
 
             // determine total count from various possible keys
@@ -249,6 +263,7 @@ const ProgressShipment = () => {
 
     const columns = [
         { title: 'No', dataIndex: 'no', key: 'no' },
+        { title: 'Customer', dataIndex: 'customer', key: 'customer', ...getColumnSearchProps('customer') },
         { title: 'No. Dokumen', dataIndex: 'docNo', key: 'docNo', ...getColumnSearchProps('docNo') },
         {
             title: (<Steps initial={1} size='small' progressDot items={headerSteps} className="timeline-header-steps" />),
@@ -323,33 +338,43 @@ const ProgressShipment = () => {
                         footer={[<Button key="close" onClick={handleModalClose}>Tutup</Button>]}
                         width={600}
                     >
-                        <Timeline mode="left" style={{ marginTop: '24px', paddingLeft: '10px' }}>
-                            {timelineData.flow.map((step, index) => {
+                        <Timeline mode="left" style={{ paddingLeft: 0 }}>
+                            {[...timelineData.flow].reverse().map((step, index) => {
                                 const handoverTime = formatDateTime(step.rawData.handoverTime);
                                 const acceptTime = formatDateTime(step.rawData.acceptTime);
 
-                                if (!handoverTime && !acceptTime) {
-                                    return null;
-                                }
+                                if (!handoverTime && !acceptTime) return null;
 
                                 return (
-                                    <Timeline.Item key={index} label={<Text strong>{step.title}</Text>} dot={<ClockCircleOutlined />}>
-                                        {handoverTime && (
-                                            <p style={{ margin: 0 }}>
-                                                <strong>Diserahkan:</strong> {handoverTime}
-                                                {step.rawData.handoverBy && ` oleh ${step.rawData.handoverBy}`}
-                                            </p>
-                                        )}
-                                        {acceptTime && (
-                                            <p style={{ margin: 0 }}>
-                                                <strong>Diterima:</strong> {acceptTime}
-                                                {step.rawData.acceptBy && ` oleh ${step.rawData.acceptBy}`}
-                                            </p>
+                                    <Timeline.Item
+                                        key={index}
+                                        dot={<ClockCircleOutlined />}
+                                    >
+                                        <div style={{ fontWeight: 'bold', marginBottom: 4 }}>{step.title}</div>
+
+                                        {(handoverTime || acceptTime) && (
+                                            <div style={{ display: 'flex', gap: '16px' }}>
+                                                {handoverTime && (
+                                                    <span>
+                                                        <strong>Ho:</strong> {handoverTime}
+                                                        {step.rawData.handoverBy && ` by ${step.rawData.handoverBy}`}
+                                                    </span>
+                                                )}
+                                                {handoverTime && acceptTime && <span> - </span>}
+                                                {acceptTime && (
+                                                    <span>
+                                                        <strong>Receipt:</strong> {acceptTime}
+                                                        {step.rawData.acceptBy && ` by ${step.rawData.acceptBy}`}
+                                                    </span>
+                                                )}
+                                            </div>
                                         )}
                                     </Timeline.Item>
+
                                 );
                             })}
                         </Timeline>
+
                     </Modal>
                 )}
             </div>

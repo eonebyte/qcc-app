@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { SearchOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
+import { SearchOutlined, CheckCircleFilled, CloseCircleFilled, RollbackOutlined, CloseOutlined } from '@ant-design/icons';
 import { Button, Checkbox, Input, Modal, Space, Table, Tag, Typography, notification } from 'antd';
 import Highlighter from 'react-highlight-words';
 import axios from 'axios';
@@ -11,20 +11,46 @@ const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
 const ReceiptDesktop = () => {
     const user = useSelector((state) => state.auth.user);
     const role = user.title;
+    const userId = user.ad_user_id;
+
+    console.log('user id : ', userId);
+
+
     // State untuk fungsionalitas tabel & pencarian
     const [searchText, setSearchText] = useState('');
     const [searchedColumn, setSearchedColumn] = useState('');
     const [data, setData] = useState([]);
+    const [dataFatFinish, setDataFatFinish] = useState([]);
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
     const searchInput = useRef(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
     const [selectedItemsForSubmit, setSelectedItemsForSubmit] = useState([]);
+    const [isModalRejectOpen, setIsModalRejectOpen] = useState(false);
+
 
     useEffect(() => {
         fetchData();
     }, []);
+
+    const getRecipientTo = (checkpoinId) => {
+        switch (String(checkpoinId)) { // Menggunakan String() agar aman jika nilainya angka atau teks
+            case '6':
+                return 'DRIVER';
+            case '8':
+                return 'DPK';
+            case '2':
+                return 'DELIVERY';
+            case '10':
+                return 'DELIVERY';
+            case '14':
+                return 'FAT';
+            default:
+                return 'DPK'; // Untuk semua nilai lain yang tidak cocok
+        }
+    };
+
 
     const fetchData = async () => {
         setLoading(true);
@@ -34,13 +60,59 @@ const ReceiptDesktop = () => {
             if (res.data.data && res.data.data.success) {
                 const rawData = res.data.data.data;
 
-                const flattenedData = rawData.map(item => ({
+
+                let flattenedData = rawData.map(item => ({
                     ...item,
                     key: item.m_inout_id,
-                    arrived: false
-                }));
+                    arrived: false,
+                    to: getRecipientTo(item.checkpoin_id),
+                })).filter(item => {
+                    if (Number(item.checkpoin_id) === 12) {
+                        return !!item.sppno; // wajib ada sppno kalau checkpoint 11
+                    }
+                    if (Number(item.checkpoin_id) === 4) {
+                        return item.driverby === userId;
+                    }
+                    return true;
+                });
 
-                setData(flattenedData);
+                // //saat dpk menyerahkan ke driver di receipt driver hanya muncul apa yg dia terima
+                // const flattenedData = rawData.map(item => ({
+                //     ...item,
+                //     key: item.m_inout_id,
+                //     arrived: false
+                // }))
+                //     // checkpoin_id "4" yaitu saat dpk pertama kali menyerahkan ke driver
+                //     // - Jika checkpoin_id == "4", ambil hanya yang driverBy sama dengan userId
+                //     // - Jika checkpoin_id bukan "4", ambil semua
+                //     .filter(item => {
+                //         if (item.checkpoin_id == "4") {
+                //             return item.driverby === userId;
+                //         }
+
+                //         return true;
+                //     });
+                // setData(flattenedData);
+
+
+                // 🔹 Pisahkan data checkpoint 11 & lainnya
+                const dataCheckpoint12 = flattenedData.filter(item => Number(item.checkpoin_id) === 12);
+                const dataLain = flattenedData.filter(item => Number(item.checkpoin_id) !== 12);
+
+                // 🔹 Distinct hanya untuk checkpoint 11 (berdasarkan sppno)
+                const distinctCheckpoint12 = Array.from(
+                    new Map(dataCheckpoint12.map(item => [item.sppno, item])).values()
+                );
+
+                // 🔹 Gabungkan lagi
+                const finalData = [...distinctCheckpoint12, ...dataLain];
+
+
+                setDataFatFinish(dataCheckpoint12);
+                setData(finalData);
+
+
+
             } else {
                 notification.warning({
                     message: 'Info',
@@ -48,6 +120,8 @@ const ReceiptDesktop = () => {
                 });
                 setData([]);
             }
+
+
         } catch (err) {
             notification.error({
                 message: 'Error',
@@ -58,6 +132,26 @@ const ReceiptDesktop = () => {
             setLoading(false);
         }
     };
+
+    console.log('this data : ', data);
+
+    const getDocumentNoColumn = () => {
+        if (role === 'fat') {
+            return {
+                title: 'SPP No',
+                dataIndex: 'sppno', // Ganti ke sppno jika role marketing
+                key: 'sppno',
+                ...getColumnSearchProps('sppno'), // Pastikan ini juga sesuai dengan sppno
+            };
+        }
+        return {
+            title: 'Document No',
+            dataIndex: 'documentno',
+            key: 'documentno',
+            ...getColumnSearchProps('documentno'),
+        };
+    };
+
 
     /**
      * Mengumpulkan item yang dipilih, lalu membuka modal konfirmasi.
@@ -115,8 +209,18 @@ const ReceiptDesktop = () => {
         }
         setIsSubmitting(true);
         try {
+            let payload = { data: selectedItemsForSubmit }
+
+
+            if (checkpoint === '12' && dataFatFinish.length > 0) {
+                const dataFat = dataFatFinish.filter(item => item.sppno === payload.data[0].sppno);
+                payload.data = dataFat;
+            }
+
+
+
             // Mengirim data yang sudah disimpan di state
-            const res = await axios.post(`${backEndUrl}/tms/accepted?&checkpoint=${checkpoint}`, { data: selectedItemsForSubmit }, { withCredentials: true });
+            const res = await axios.post(`${backEndUrl}/tms/accepted?&checkpoint=${checkpoint}`, payload, { withCredentials: true });
 
             if (res.data.success) {
                 notification.success({
@@ -220,6 +324,14 @@ const ReceiptDesktop = () => {
             render: (text, record, index) => ((pagination.current - 1) * pagination.pageSize) + index + 1
         },
         {
+            title: 'From',
+            key: 'to',
+            dataIndex: 'to',
+            width: 70,
+            align: 'center',
+            ...getColumnSearchProps('to'),
+        },
+        {
             title: <Checkbox
                 checked={isAllSelected}
                 onChange={handleSelectAll}
@@ -234,30 +346,57 @@ const ReceiptDesktop = () => {
                 />
             ),
         },
-        {
-            title: 'Document No',
-            dataIndex: 'documentno',
-            key: 'documentno',
-            ...getColumnSearchProps('documentno'),
-        },
+        getDocumentNoColumn(),
+        // {
+        //     title: 'Document No',
+        //     dataIndex: 'documentno',
+        //     key: 'documentno',
+        //     ...getColumnSearchProps('documentno'),
+        // },
         {
             title: 'Customer',
             dataIndex: 'customer',
             key: 'customer',
             ...getColumnSearchProps('customer'),
         },
+        // {
+        //     title: 'Status',
+        //     dataIndex: '',
+        //     key: '',
+        //     width: 100,
+        //     render: () => (
+        //         < Tag color="#faad14" >
+        //             <Text strong>Waiting</Text>
+        //         </Tag >
+        //     )
+        // },
         {
-            title: 'Status',
-            dataIndex: '',
-            key: '',
+            title: 'Action',
+            dataIndex: 'arrived',
+            key: 'status',
             width: 100,
-            render: () => (
-                < Tag color="#faad14" >
-                    <Text strong>Waiting</Text>
-                </Tag >
-            )
+            render: (_, record) => {
+                console.log('record : ', record);
+
+                return (
+                    <Button onClick={showModalReject} icon={<CloseOutlined />} size='small' color='danger' variant='outlined'>
+                        Reject
+                    </Button>
+                )
+            }
         }
     ];
+
+    const showModalReject = () => {
+        setIsModalRejectOpen(true);
+    };
+
+    const handleRejectOk = () => {
+        setIsModalRejectOpen(false);
+    };
+    const handleRejectCancel = () => {
+        setIsModalRejectOpen(false);
+    };
 
     return (
         <>
@@ -301,6 +440,16 @@ const ReceiptDesktop = () => {
                             ))}
                         </ul>
                     </div>
+                </Modal>
+
+                <Modal
+                    title="Confirm Reject"
+                    closable={{ 'aria-label': 'Custom Close Button' }}
+                    open={isModalRejectOpen}
+                    onOk={handleRejectOk}
+                    onCancel={handleRejectCancel}
+                >
+                    <p>are you sure to reject this document ?</p>
                 </Modal>
             </LayoutGlobal>
         </>

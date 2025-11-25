@@ -18,7 +18,7 @@ if (process.stdout.isTTY) {
 
 
 
-const port = process.env.BASE_PORT || 3000
+const port = process.env.BASE_PORT ? parseInt(process.env.BASE_PORT) : 3000;
 const host = process.env.BASE_URL || '127.0.0.1'
 
 const app = await build(opts)

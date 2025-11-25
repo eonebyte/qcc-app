@@ -15,12 +15,12 @@ export default async function (fastify, options) {
 
                 // Set session with user information
                 request.session.set('user', {
-                    id: user.ad_user_id,
+                    ad_user_id: Number(user.ad_user_id),
                     name: user.name,
                     title: user.title
                 });
 
-                reply.send({ success: true, user: { id: user.ad_user_id, name: user.name, title: user.title } });
+                reply.send({ success: true, user: { ad_user_id: Number(user.ad_user_id), name: user.name, title: user.title } });
             } else {
                 reply.code(401).send({ success: false, message: 'Invalid credentials' });
             }
@@ -42,9 +42,6 @@ export default async function (fastify, options) {
                 { username, password },
                 { outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT }
             );
-
-            console.log('this result', result);
-            console.log('this count', result.rowCount);
 
 
             if (result.rows.length > 0) {
