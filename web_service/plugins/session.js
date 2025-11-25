@@ -13,7 +13,7 @@ export default fp(async (fastify, opts) => {
         expiry: 24 * 60 * 60, // Default 1 day
         cookie: {
             path: '/',
-            httpOnly: true,
+            httpOnly: false,
         }
     });
 }, { name: 'session-plugin' });
