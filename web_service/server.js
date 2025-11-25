@@ -1,6 +1,8 @@
 import { build } from './app.js'
 import closeWithGrace from 'close-with-grace'
 import dotenv from 'dotenv'
+import fs from 'fs';
+import { join } from 'desm'
 
 dotenv.config()
 
