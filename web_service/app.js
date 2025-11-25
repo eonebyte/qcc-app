@@ -21,7 +21,7 @@ export async function build(opts = {}) {
 
     await app.register(cors, {
         // origin: `${BASE_URL_CLIENT}:${BASE_PORT_CLIENT}`,
-        origin: 'http://localhost:5173',
+        origin: '*',
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     });
