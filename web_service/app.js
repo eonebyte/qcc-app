@@ -67,17 +67,18 @@ export async function build(opts = {}) {
         return reply.sendFile('index.html'); // Mengakses file index.html di folder dist
     });
 
-    // SPA fallback hanya untuk route non-API
-    app.get('/*', (request, reply) => {
+    app.setNotFoundHandler((request, reply) => {
         const url = request.raw.url;
 
-        // Jangan ganggu route API dan file static
+        // Jangan ganggu API & FILES
         if (url.startsWith('/api') || url.startsWith('/files')) {
-            return reply.callNotFound();
+            reply.code(404);
+            return { message: "Not Found" };
         }
 
         return reply.sendFile('index.html');
     });
+
 
 
     app.register(autoload, {
@@ -105,10 +106,7 @@ export async function build(opts = {}) {
         return "I'm sorry, there was an error processing your request."
     })
 
-    app.setNotFoundHandler(async (request, reply) => {
-        reply.code(404)
-        return "I'm sorry, I couldn't find what you were looking for."
-    })
+
 
     return app
 }
