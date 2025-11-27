@@ -67,6 +67,19 @@ export async function build(opts = {}) {
         return reply.sendFile('index.html'); // Mengakses file index.html di folder dist
     });
 
+    // SPA fallback hanya untuk route non-API
+    app.get('/*', (request, reply) => {
+        const url = request.raw.url;
+
+        // Jangan ganggu route API dan file static
+        if (url.startsWith('/api') || url.startsWith('/files')) {
+            return reply.callNotFound();
+        }
+
+        return reply.sendFile('index.html');
+    });
+
+
     app.register(autoload, {
         dir: join(import.meta.url, 'plugins'),
     });
