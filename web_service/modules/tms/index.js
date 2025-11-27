@@ -3,6 +3,13 @@ import autoload from '@fastify/autoload'
 import { join } from 'desm'
 import oracleDB from "../../configs/dbOracle.js";
 import crypto from "crypto";
+import dotenv from 'dotenv'
+
+
+
+dotenv.config()
+
+const pathUrl = process.env.PATH_URL;
 
 
 const ROLE_CONFIGS = {
@@ -3053,6 +3060,8 @@ class TMS {
             const queryBundleDetail = `
             SELECT 
                 hg.attachment,
+                hg.created,
+                hg.received,
                 hg.createdby,
                 hg.receivedby,
                 hg.checkpoint,
@@ -3067,6 +3076,8 @@ class TMS {
             WHERE hg.documentno = $1
             GROUP BY 
                 hg.attachment,
+                hg.created,
+                hg.received,
                 hg.createdby,
                 hg.receivedby,
                 hg.checkpoint,
@@ -3080,6 +3091,8 @@ class TMS {
             if (!pgRow) return [];
 
             const attachmentBundle = resBundleDetailRows.rows[0]?.attachment || null;
+            const createdBundle = pgRow.created;
+            const receivedBundle = pgRow.received;
             const createdbyName = pgRow.createdby_name;
             const receivedbyName = pgRow.receivedby_name;
             const bundleCheckpoint = pgRow.checkpoint;
@@ -3149,8 +3162,13 @@ class TMS {
                 uid: docNo,
                 name: attachmentBundle,
                 status: 'done',
-                url: `http://localhost:3200/files/handover/${attachmentBundle}`,
+                url: `${pathUrl}:3200/files/handover/${attachmentBundle}`,
             };
+
+            const dateHandover = {
+                createdBundle: createdBundle,
+                receivedBundle: receivedBundle
+            }
 
             const dataUser = {
                 createdby_name: createdbyName,
@@ -3158,7 +3176,7 @@ class TMS {
                 signature: signatureHash
             }
 
-            return { bundle: dataAttachment, listShipment: formattedRows, dataUser, bundleNo: docNo, bundleCheckpoint: bundleCheckpoint };
+            return { bundle: dataAttachment, listShipment: formattedRows, dataUser, bundleNo: docNo, bundleCheckpoint: bundleCheckpoint, dateHandover: dateHandover };
 
         } catch (error) {
             console.error('Error querying list bundle detail:', error);
@@ -3170,7 +3188,246 @@ class TMS {
         }
     }
 
+    async listBundleDetailPDF(dbClient, docNo) {
+        let oracleConnection;
 
+        try {
+            // Ambil data dari PostgreSQL
+            const queryBundleDetail = `
+            SELECT 
+                hg.attachment,
+                hg.created,
+                hg.received,
+                hg.createdby,
+                hg.receivedby,
+                hg.checkpoint,
+                u1.name AS createdby_name,
+                u2.name AS receivedby_name,
+                ARRAY_AGG(t.m_inout_id) AS inout_ids
+            FROM adw_handover_group hg
+            LEFT JOIN ad_user u1 ON u1.ad_user_id = hg.createdby
+            LEFT JOIN ad_user u2 ON u2.ad_user_id = hg.receivedby
+            JOIN adw_group_sj gs ON gs.adw_handover_group_id = hg.adw_handover_group_id
+            JOIN adw_trackingsj t ON t.adw_trackingsj_id = gs.adw_trackingsj_id
+            WHERE hg.documentno = $1
+            GROUP BY 
+                hg.attachment,
+                hg.created,
+                hg.received,
+                hg.createdby,
+                hg.receivedby,
+                hg.checkpoint,
+                u1.name,
+                u2.name
+        `;
+
+            const resBundleDetailRows = await dbClient.query(queryBundleDetail, [docNo]);
+
+            const pgRow = resBundleDetailRows.rows[0];
+            if (!pgRow) return [];
+
+            const attachmentBundle = resBundleDetailRows.rows[0]?.attachment || null;
+            const createdBundle = pgRow.created;
+            const receivedBundle = pgRow.received;
+            const createdbyName = pgRow.createdby_name;
+            const receivedbyName = pgRow.receivedby_name;
+            const bundleCheckpoint = pgRow.checkpoint;
+
+            // Ambil array m_inout_id
+            const inoutIds =
+                resBundleDetailRows.rows[0]?.inout_ids?.filter(id => id !== null) || [];
+
+            if (inoutIds.length === 0) {
+                return []; // tidak ada data
+            }
+
+            // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+            // 1️⃣ Generate Signature (hash)
+            // format: MD5(documentno|createdby|receivedby|created_at)
+            const rawString =
+                `${pgRow.documentno}|${pgRow.createdby}|${pgRow.receivedby}|${pgRow.created_at}`;
+
+            const signatureHash = crypto
+                .createHash("md5")
+                .update(rawString)
+                .digest("hex");
+            // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+            // Open Oracle connection
+            oracleConnection = await oracleDB.openConnection();
+
+            // Build placeholder :id1, :id2, ...
+            const placeholders = inoutIds.map((_, i) => `:id${i + 1}`).join(',');
+
+            // Bind value per placeholder
+            const bindParams = {};
+            inoutIds.forEach((val, index) => {
+                bindParams[`id${index + 1}`] = val;
+            });
+
+            const queryGetShipment = `
+            SELECT 
+                mi.M_INOUT_ID,
+                mi.DOCUMENTNO,
+                mi.MOVEMENTDATE,
+                mi.C_BPARTNER_ID,
+                mi.DESCRIPTION,
+                cb.VALUE AS CUSTOMER
+            FROM M_INOUT mi 
+            JOIN C_BPARTNER cb ON cb.C_BPARTNER_ID = mi.C_BPARTNER_ID
+            WHERE mi.M_INOUT_ID IN (${placeholders})
+            ORDER BY mi.M_INOUT_ID DESC
+        `;
+
+            const resultShipmentRows = await oracleConnection.execute(
+                queryGetShipment,
+                bindParams,
+                { outFormat: oracleDB.OUT_FORMAT_OBJECT }
+            );
+
+            const columns = resultShipmentRows.metaData.map(col => col.name.toLowerCase());
+            const formattedRows = resultShipmentRows.rows.map(row => {
+                const obj = {};
+                row.forEach((val, idx) => {
+                    obj[columns[idx]] = val;
+                });
+                return obj;
+            });
+
+            const dataAttachment = {
+                uid: docNo,
+                name: attachmentBundle,
+                status: 'done',
+                url: `${pathUrl}:3200/files/handover/${attachmentBundle}`,
+            };
+
+            const dateHandover = {
+                createdBundle: createdBundle,
+                receivedBundle: receivedBundle
+            }
+
+            const dataUser = {
+                createdby_name: createdbyName,
+                receivedby_name: receivedbyName,
+                signature: signatureHash
+            }
+
+            return { bundle: dataAttachment, listShipment: formattedRows, dataUser, bundleNo: docNo, bundleCheckpoint: bundleCheckpoint, dateHandover: dateHandover };
+
+        } catch (error) {
+            console.error('Error querying list bundle detail:', error);
+            return [];
+        } finally {
+            if (oracleConnection) await oracleConnection.close();
+        }
+    }
+
+    async processReject(server, payload) {
+        let dbClient;
+        let oracleConnection;
+
+        const { adw_trackingsj_id } = payload;
+
+        try {
+
+            dbClient = await server.pg.connect();
+            await dbClient.query('BEGIN'); // Start transaction
+
+            const checkQuery = `
+            SELECT checkpoin_id 
+            FROM adw_trackingsj 
+            WHERE adw_trackingsj_id = $1
+        `;
+            const checkRes = await dbClient.query(checkQuery, [adw_trackingsj_id]);
+
+            if (checkRes.rowCount === 0) {
+                throw new Error("Data tidak ditemukan");
+            }
+
+            const currentCheckpoint = Number(checkRes.rows[0].checkpoin_id);
+
+            // ==========================================================
+            //  CASE 1: Jika checkpoint = 2 → HAPUS SEMUA DATA TRACKING
+            // ==========================================================
+            if (currentCheckpoint === 2) {
+
+                // Hapus events
+                await dbClient.query(
+                    `DELETE FROM adw_trackingsj_events WHERE adw_trackingsj_id = $1`,
+                    [adw_trackingsj_id]
+                );
+
+                // Hapus group
+                await dbClient.query(
+                    `DELETE FROM adw_group_sj WHERE adw_trackingsj_id = $1`,
+                    [adw_trackingsj_id]
+                );
+
+                // Hapus data utama
+                await dbClient.query(
+                    `DELETE FROM adw_trackingsj WHERE adw_trackingsj_id = $1`,
+                    [adw_trackingsj_id]
+                );
+
+                await dbClient.query('COMMIT');
+
+                return {
+                    success: true,
+                    message: "Checkpoint 2 → Data dihapus seluruhnya",
+                    data: null
+                };
+            }
+
+
+            // QUERY 1: Delete events HANDOVER where event checkpoint = t.checkpoin_id - 1
+            const deleteEventsQuery = `
+            DELETE FROM adw_trackingsj_events ate
+            USING adw_trackingsj t
+            WHERE ate.adw_trackingsj_id = t.adw_trackingsj_id
+              AND t.adw_trackingsj_id = $1
+              AND ate.adw_event_type = 'HANDOVER'
+              AND CAST(ate.checkpoin_id AS INTEGER) = (CAST(t.checkpoin_id AS INTEGER) - 1);
+        `;
+            await dbClient.query(deleteEventsQuery, [adw_trackingsj_id]);
+
+
+            // QUERY 2: Delete group_sj with matching checkpoint
+            const deleteGroupQuery = `
+            DELETE FROM adw_group_sj ags
+            USING adw_trackingsj t
+            WHERE ags.adw_trackingsj_id = t.adw_trackingsj_id
+              AND ags.adw_trackingsj_id = $1
+              AND CAST(ags.checkpoint AS INTEGER) = CAST(t.checkpoin_id AS INTEGER);
+        `;
+            await dbClient.query(deleteGroupQuery, [adw_trackingsj_id]);
+
+
+            // QUERY 3: Update t.checkpoin_id - 1
+            const updateQuery = `
+            UPDATE adw_trackingsj
+            SET checkpoin_id = (CAST(checkpoin_id AS INTEGER) - 1)::varchar
+            WHERE adw_trackingsj_id = $1
+            RETURNING *;
+        `;
+            const updated = await dbClient.query(updateQuery, [adw_trackingsj_id]);
+
+
+            await dbClient.query('COMMIT');
+
+            return {
+                success: true,
+                message: 'Data berhasil di-reject',
+                data: updated.rows[0]
+            };
+        } catch (error) {
+            console.error('Error reject:', error);
+            return [];
+        } finally {
+
+            if (dbClient) await dbClient.release();
+            if (oracleConnection) await oracleConnection.close();
+        }
+    }
 
 
 }

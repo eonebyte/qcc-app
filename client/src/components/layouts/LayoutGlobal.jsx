@@ -140,6 +140,7 @@ const boxStyle = {
 // };
 
 
+
 function LayoutGlobal({ children }) {
     const user = useSelector((state) => state.auth.user);
 
@@ -210,20 +211,13 @@ function LayoutGlobal({ children }) {
     const navigateTo = useNavigate();
     const locationPath = useLocation();
 
-    const mapPathToKey = (pathname) => {
-        if (pathname.startsWith("/history")) return "/history";
-        if (pathname.startsWith("/list/handover")) return "/list/handover";
-        if (pathname.startsWith("/receipt")) return "/receipt";
-        if (pathname.startsWith("/outstanding")) return "/outstanding";
-        if (pathname === "/") return "/";
-        return pathname; // fallback
-    };
+    const [selectedKeys, setSelectedKeys] = useState([locationPath.pathname]);
 
-    const [selectedKeys, setSelectedKeys] = useState([mapPathToKey(locationPath.pathname)]);
 
     useEffect(() => {
-        setSelectedKeys([mapPathToKey(locationPath.pathname)]);
+        setSelectedKeys([locationPath.pathname]);
     }, [locationPath.pathname]);
+
 
 
 
@@ -260,6 +254,7 @@ function LayoutGlobal({ children }) {
         >
             <Layout style={{ minHeight: "100vh", margin: "0" }}>
                 <Sider
+                    theme="dark"
                     trigger={null}
                     collapsible
                     collapsed={collapsed}
@@ -269,7 +264,7 @@ function LayoutGlobal({ children }) {
                     <div>
                         <div className="demo-logo-vertical" />
                         <Menu
-                            inlineIndent={8}
+                            inlineIndent={28}
                             theme="dark"
                             mode="inline"
                             selectedKeys={selectedKeys}

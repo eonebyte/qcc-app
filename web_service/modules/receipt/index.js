@@ -2,9 +2,162 @@ import fp from 'fastify-plugin'
 import autoload from '@fastify/autoload'
 import { join } from 'desm'
 import oracleDB from "../../configs/dbOracle.js";
+import dayjs from "dayjs";
+import PDFDocument from "pdfkit";
+import fs from "fs";
+import path from "path";
+import qr from "qrcode";
+import { v4 as uuidv4 } from "uuid";
+import dotenv from 'dotenv'
+
+
+
+dotenv.config()
+
+const pathUrl = process.env.PATH_URL;
 
 
 class Receipt {
+
+    formatDate(iso) {
+        if (!iso) return "-";
+        // convert ke WIB dan format YYYY-MM-DD
+        return dayjs(iso).tz("Asia/Jakarta").format("YYYY-MM-DD");
+    };
+
+    async generateHandoverPdf(payload, from_act, to_act) {
+        const {
+            listShipment,
+            dataUser,
+            bundleNo,
+            dateHandover
+        } = payload;
+
+        const uploadDir = path.join(process.cwd(), "uploads/handover");
+        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+        const uniqueId = uuidv4();
+        const fileName = `handover_${uniqueId}.pdf`;
+        const filePath = path.join(uploadDir, fileName);
+
+        const doc = new PDFDocument({
+            size: "A4",
+            margin: 40
+        });
+
+        const stream = fs.createWriteStream(filePath);
+        doc.pipe(stream);
+
+        // ========================================
+        // HEADER
+        // ========================================
+        doc.font('Helvetica-Bold').fontSize(16).text(`LIST HANDOVER (${from_act} to ${to_act})`, { align: "center" });
+        doc.moveDown(0.2);
+        doc.font('Helvetica').fontSize(12).text(`No: ${bundleNo}`, { align: "center" });
+        doc.moveDown(2); // Jarak ke tabel
+
+        // ========================================
+        // TABLE HEADER – Fixed Y Position (Supaya Rapih)
+        // ========================================
+        const startX = 40;
+        const colNo = 40;
+        const colCust = 90;  // Geser sedikit supaya kolom No lega
+        const colShip = 260;
+        const colMove = 400;
+
+        // Simpan posisi Y header agar sejajar
+        const headerY = doc.y;
+
+        doc.font('Helvetica-Bold').fontSize(11);
+        doc.text("No", colNo, headerY);
+        doc.text("Customer", colCust, headerY);
+        doc.text("Shipment No", colShip, headerY);
+        doc.text("Movement Date", colMove, headerY);
+
+        // Garis Header
+        // (Y + 15 agar garis ada sedikit di bawah teks)
+        doc.moveTo(startX, headerY + 15).lineTo(550, headerY + 15).lineWidth(1).stroke();
+
+        // Set cursor ke bawah header untuk baris pertama data
+        doc.y = headerY + 25;
+
+        // ========================================
+        // TABLE DATA
+        // ========================================
+        doc.font('Helvetica').fontSize(11); // Reset font normal
+
+        listShipment.forEach((ship, idx) => {
+            const moveDate = dayjs(ship.movementdate).tz("Asia/Jakarta").format("YYYY-MM-DD");
+
+            // Simpan posisi Y baris ini
+            const rowY = doc.y;
+
+            // Cetak semua kolom dengan Y yang sama
+            doc.text(idx + 1, colNo, rowY);
+            doc.text(ship.customer, colCust, rowY);
+            doc.text(ship.documentno, colShip, rowY);
+            doc.text(moveDate, colMove, rowY);
+
+            // Garis pemisah antar row
+            const lineY = rowY + 15;
+            doc.moveTo(startX, lineY).lineTo(550, lineY).lineWidth(0.5).stroke();
+
+            // Pindah ke baris berikutnya
+            doc.y = lineY + 8;
+        });
+
+        // Jarak dari tabel ke section tanda tangan
+        doc.moveDown(2);
+
+        // ========================================
+        // SIGNATURE SECTION
+        // ========================================
+        const sigStartY = doc.y; // Titik patokan atas section tanda tangan
+        const centerX = 297.5;   // Tengah halaman A4 (595 / 2)
+        const leftX = 80;
+        const rightX = 380;
+        const boxWidth = 160;
+
+        const createdHour = dayjs(dateHandover.createdBundle).format("HH:mm") + " WIB";
+        const receivedHour = dayjs(dateHandover.receivedBundle).format("HH:mm") + " WIB";
+
+        // 1. JUDUL (Delivery / DPK)
+        doc.font('Helvetica-Bold').fontSize(12);
+
+        // Cetak judul
+        doc.text(from_act, leftX, sigStartY, { align: "center", width: boxWidth });
+        doc.text(to_act, rightX, sigStartY, { align: "center", width: boxWidth });
+
+        // 2. QR CODE (POSISI BARU: sejajar dengan judul, di tengah)
+        const qrUrl = `${pathUrl}:3200/files/handover/${fileName}`;
+        const qrData = await qr.toDataURL(qrUrl);
+        // Geser Y sedikit (-5) biar pas tengah secara visual
+        doc.image(qrData, centerX - 35, sigStartY - 5, { width: 70 });
+
+        // 3. GARIS TANDA TANGAN
+        // Jarak diperkecil (misal 50pt dari startY, sebelumnya terlalu lebar)
+        const lineY = sigStartY + 50;
+
+        doc.moveTo(leftX, lineY).lineTo(leftX + boxWidth, lineY).lineWidth(1).stroke();
+        doc.moveTo(rightX, lineY).lineTo(rightX + boxWidth, lineY).lineWidth(1).stroke();
+
+        // 4. NAMA USER
+        doc.font('Helvetica').fontSize(11);
+        doc.text(dataUser.createdby_name, leftX, lineY + 5, { width: boxWidth, align: "center" });
+        doc.text(dataUser.receivedby_name, rightX, lineY + 5, { width: boxWidth, align: "center" });
+
+        // 5. WAKTU (Jam) - Jika ingin warna merah seperti contoh, gunakan fillColor('red')
+        // Jika ingin hitam/abu standar hapus .fillColor('red')
+        // doc.fontSize(10).fillColor('red');
+        doc.text(createdHour, leftX, lineY + 20, { width: boxWidth, align: "center" });
+        doc.text(receivedHour, rightX, lineY + 20, { width: boxWidth, align: "center" });
+
+        doc.end();
+        await new Promise((resolve) => stream.on("finish", resolve));
+
+        return { fileName, filePath };
+    }
+
     async listDPKFromDelivery(server) {
         let connection;
         let dbClient;
@@ -70,6 +223,9 @@ class Receipt {
             const oracleMap = new Map(
                 oracleRows.rows.map(row => [String(row.M_INOUT_ID), row])
             );
+
+            // Generate PDF
+
 
             // ---------------------------------------------------------
             // 3️⃣ Gabungkan PostgreSQL + Oracle
@@ -168,6 +324,7 @@ class Receipt {
             // 🔁 LOOP SETIAP BUNDLE DARI FRONTEND
             for (const bundle of bundles) {
 
+
                 // 1️⃣ AMBIL LIST TRACKING DARI BUNDLE LAMA (pivot)
                 const getOldPivotQuery = `
                 SELECT gs.adw_trackingsj_id, t.m_inout_id
@@ -239,7 +396,50 @@ class Receipt {
                         updatedby = $1
                     WHERE documentno = $2
                 `;
-                await dbClient.query(updateHandoverGroupQuery, [userId, bundle.bundleNo]);
+                const updateResult = await dbClient.query(updateHandoverGroupQuery, [
+                    userId,
+                    bundle.bundleNo
+                ]);
+
+                if (updateResult.rowCount === 0) {
+                    throw new Error(`Update gagal: documentno ${bundle.bundleNo} tidak ditemukan.`);
+                }
+
+                console.log("Update handover group berhasil. rowCount =", updateResult.rowCount);
+
+
+
+                // Generate PDF
+                const { listShipment, dataUser, bundleNo, bundleCheckpoint, dateHandover } = await server.tms.listBundleDetailPDF(dbClient, bundle.bundleNo)
+                const payload = {
+                    listShipment,
+                    dataUser,
+                    bundleNo,
+                    bundleCheckpoint,
+                    dateHandover
+                }
+
+                console.log('test received name : ', dataUser.receivedby_name);
+
+
+                const { fileName, filePath } = await this.generateHandoverPdf(payload, "Delivery", "DPK")
+
+
+                if (fileName) {
+                    const updateHandoverGroupAttachment = `
+                    UPDATE adw_handover_group
+                    SET 
+                        updated = NOW(),
+                        updatedby = $1,
+                        attachment = $2
+                    WHERE documentno = $3
+                `;
+                    await dbClient.query(updateHandoverGroupAttachment, [
+                        userId,
+                        fileName,
+                        bundle.bundleNo
+                    ]);
+                }
             }
 
             await dbClient.query("COMMIT");
@@ -690,17 +890,51 @@ class Receipt {
                         updatedby = $1
                     WHERE documentno = $2
                 `;
-                await dbClient.query(updateHandoverGroupQuery, [userId, bundle.bundleNo]);
 
-                // // 2️⃣ UPDATE GROUP
-                // const updateGroupQuery = `
-                //     UPDATE adw_handover_group
-                //     SET checkpoint = '5',
-                //         updated = NOW(),
-                //         updatedby = $2
-                //     WHERE adw_handover_group_id = $1
-                // `;
-                // await dbClient.query(updateGroupQuery, [groupId, userId]);
+                const updateResult = await dbClient.query(updateHandoverGroupQuery, [
+                    userId,
+                    bundle.bundleNo
+                ]);
+
+                if (updateResult.rowCount === 0) {
+                    throw new Error(`Update gagal: documentno ${bundle.bundleNo} tidak ditemukan.`);
+                }
+
+                console.log("Update handover group berhasil. rowCount =", updateResult.rowCount);
+
+
+
+                // Generate PDF
+                const { listShipment, dataUser, bundleNo, bundleCheckpoint, dateHandover } = await server.tms.listBundleDetailPDF(dbClient, bundle.bundleNo)
+                const payload = {
+                    listShipment,
+                    dataUser,
+                    bundleNo,
+                    bundleCheckpoint,
+                    dateHandover
+                }
+
+                console.log('test received name : ', dataUser.receivedby_name);
+
+
+                const { fileName, filePath } = await this.generateHandoverPdf(payload, "DPK", "Driver")
+
+
+                if (fileName) {
+                    const updateHandoverGroupAttachment = `
+                    UPDATE adw_handover_group
+                    SET 
+                        updated = NOW(),
+                        updatedby = $1,
+                        attachment = $2
+                    WHERE documentno = $3
+                `;
+                    await dbClient.query(updateHandoverGroupAttachment, [
+                        userId,
+                        fileName,
+                        bundle.bundleNo
+                    ]);
+                }
             }
 
 
@@ -962,17 +1196,50 @@ class Receipt {
                         updatedby = $1
                     WHERE documentno = $2
                 `;
-                await dbClient.query(updateHandoverGroupQuery, [userId, bundle.bundleNo]);
+                const updateResult = await dbClient.query(updateHandoverGroupQuery, [
+                    userId,
+                    bundle.bundleNo
+                ]);
 
-                // 2️⃣ UPDATE GROUP
-                // const updateGroupQuery = `
-                //     UPDATE adw_handover_group
-                //     SET checkpoint = '5',
-                //         updated = NOW(),
-                //         updatedby = $2
-                //     WHERE adw_handover_group_id = $1
-                // `;
-                // await dbClient.query(updateGroupQuery, [groupId, userId]);
+                if (updateResult.rowCount === 0) {
+                    throw new Error(`Update gagal: documentno ${bundle.bundleNo} tidak ditemukan.`);
+                }
+
+                console.log("Update handover group berhasil. rowCount =", updateResult.rowCount);
+
+
+
+                // Generate PDF
+                const { listShipment, dataUser, bundleNo, bundleCheckpoint, dateHandover } = await server.tms.listBundleDetailPDF(dbClient, bundle.bundleNo)
+                const payload = {
+                    listShipment,
+                    dataUser,
+                    bundleNo,
+                    bundleCheckpoint,
+                    dateHandover
+                }
+
+                console.log('test received name : ', dataUser.receivedby_name);
+
+
+                const { fileName, filePath } = await this.generateHandoverPdf(payload, "Driver", "DPK")
+
+
+                if (fileName) {
+                    const updateHandoverGroupAttachment = `
+                    UPDATE adw_handover_group
+                    SET 
+                        updated = NOW(),
+                        updatedby = $1,
+                        attachment = $2
+                    WHERE documentno = $3
+                `;
+                    await dbClient.query(updateHandoverGroupAttachment, [
+                        userId,
+                        fileName,
+                        bundle.bundleNo
+                    ]);
+                }
             }
 
 
@@ -1234,17 +1501,50 @@ class Receipt {
                         updatedby = $1
                     WHERE documentno = $2
                 `;
-                await dbClient.query(updateHandoverGroupQuery, [userId, bundle.bundleNo]);
+                const updateResult = await dbClient.query(updateHandoverGroupQuery, [
+                    userId,
+                    bundle.bundleNo
+                ]);
 
-                // 2️⃣ UPDATE GROUP
-                // const updateGroupQuery = `
-                //     UPDATE adw_handover_group
-                //     SET checkpoint = '5',
-                //         updated = NOW(),
-                //         updatedby = $2
-                //     WHERE adw_handover_group_id = $1
-                // `;
-                // await dbClient.query(updateGroupQuery, [groupId, userId]);
+                if (updateResult.rowCount === 0) {
+                    throw new Error(`Update gagal: documentno ${bundle.bundleNo} tidak ditemukan.`);
+                }
+
+                console.log("Update handover group berhasil. rowCount =", updateResult.rowCount);
+
+
+
+                // Generate PDF
+                const { listShipment, dataUser, bundleNo, bundleCheckpoint, dateHandover } = await server.tms.listBundleDetailPDF(dbClient, bundle.bundleNo)
+                const payload = {
+                    listShipment,
+                    dataUser,
+                    bundleNo,
+                    bundleCheckpoint,
+                    dateHandover
+                }
+
+                console.log('test received name : ', dataUser.receivedby_name);
+
+
+                const { fileName, filePath } = await this.generateHandoverPdf(payload, "DPK", "Delivery")
+
+
+                if (fileName) {
+                    const updateHandoverGroupAttachment = `
+                    UPDATE adw_handover_group
+                    SET 
+                        updated = NOW(),
+                        updatedby = $1,
+                        attachment = $2
+                    WHERE documentno = $3
+                `;
+                    await dbClient.query(updateHandoverGroupAttachment, [
+                        userId,
+                        fileName,
+                        bundle.bundleNo
+                    ]);
+                }
             }
 
 
@@ -1506,17 +1806,50 @@ class Receipt {
                         updatedby = $1
                     WHERE documentno = $2
                 `;
-                await dbClient.query(updateHandoverGroupQuery, [userId, bundle.bundleNo]);
+                const updateResult = await dbClient.query(updateHandoverGroupQuery, [
+                    userId,
+                    bundle.bundleNo
+                ]);
 
-                // 2️⃣ UPDATE GROUP
-                // const updateGroupQuery = `
-                //     UPDATE adw_handover_group
-                //     SET checkpoint = '5',
-                //         updated = NOW(),
-                //         updatedby = $2
-                //     WHERE adw_handover_group_id = $1
-                // `;
-                // await dbClient.query(updateGroupQuery, [groupId, userId]);
+                if (updateResult.rowCount === 0) {
+                    throw new Error(`Update gagal: documentno ${bundle.bundleNo} tidak ditemukan.`);
+                }
+
+                console.log("Update handover group berhasil. rowCount =", updateResult.rowCount);
+
+
+
+                // Generate PDF
+                const { listShipment, dataUser, bundleNo, bundleCheckpoint, dateHandover } = await server.tms.listBundleDetailPDF(dbClient, bundle.bundleNo)
+                const payload = {
+                    listShipment,
+                    dataUser,
+                    bundleNo,
+                    bundleCheckpoint,
+                    dateHandover
+                }
+
+                console.log('test received name : ', dataUser.receivedby_name);
+
+
+                const { fileName, filePath } = await this.generateHandoverPdf(payload, "Delivery", "MKT")
+
+
+                if (fileName) {
+                    const updateHandoverGroupAttachment = `
+                    UPDATE adw_handover_group
+                    SET 
+                        updated = NOW(),
+                        updatedby = $1,
+                        attachment = $2
+                    WHERE documentno = $3
+                `;
+                    await dbClient.query(updateHandoverGroupAttachment, [
+                        userId,
+                        fileName,
+                        bundle.bundleNo
+                    ]);
+                }
             }
 
 
@@ -1777,17 +2110,50 @@ class Receipt {
                         updatedby = $1
                     WHERE documentno = $2
                 `;
-                await dbClient.query(updateHandoverGroupQuery, [userId, bundle.bundleNo]);
+                const updateResult = await dbClient.query(updateHandoverGroupQuery, [
+                    userId,
+                    bundle.bundleNo
+                ]);
 
-                // 2️⃣ UPDATE GROUP
-                // const updateGroupQuery = `
-                //     UPDATE adw_handover_group
-                //     SET checkpoint = '5',
-                //         updated = NOW(),
-                //         updatedby = $2
-                //     WHERE adw_handover_group_id = $1
-                // `;
-                // await dbClient.query(updateGroupQuery, [groupId, userId]);
+                if (updateResult.rowCount === 0) {
+                    throw new Error(`Update gagal: documentno ${bundle.bundleNo} tidak ditemukan.`);
+                }
+
+                console.log("Update handover group berhasil. rowCount =", updateResult.rowCount);
+
+
+
+                // Generate PDF
+                const { listShipment, dataUser, bundleNo, bundleCheckpoint, dateHandover } = await server.tms.listBundleDetailPDF(dbClient, bundle.bundleNo)
+                const payload = {
+                    listShipment,
+                    dataUser,
+                    bundleNo,
+                    bundleCheckpoint,
+                    dateHandover
+                }
+
+                console.log('test received name : ', dataUser.receivedby_name);
+
+
+                const { fileName, filePath } = await this.generateHandoverPdf(payload, "MKT", "FAT")
+
+
+                if (fileName) {
+                    const updateHandoverGroupAttachment = `
+                    UPDATE adw_handover_group
+                    SET 
+                        updated = NOW(),
+                        updatedby = $1,
+                        attachment = $2
+                    WHERE documentno = $3
+                `;
+                    await dbClient.query(updateHandoverGroupAttachment, [
+                        userId,
+                        fileName,
+                        bundle.bundleNo
+                    ]);
+                }
             }
 
 

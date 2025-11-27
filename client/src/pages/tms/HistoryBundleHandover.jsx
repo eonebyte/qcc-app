@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Tabs, Card, notification, Badge, Tag } from "antd";
+import { Table, Button, Tabs, Card, notification, Badge, Tag, Modal, Spin } from "antd";
 import { AndroidOutlined, AppleOutlined, PrinterOutlined } from "@ant-design/icons";
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
@@ -8,6 +8,8 @@ import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import { useSelector } from "react-redux";
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
 
@@ -27,37 +29,32 @@ const HistoryBundleHandover = () => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
 
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [pdfBlobUrl, setPdfBlobUrl] = useState(null); // URL untuk iframe
+    const [processingPdf, setProcessingPdf] = useState(false); // Loading saat edit PDF
+
+
     useEffect(() => {
         loadData();
     }, []);
 
     let cPoint;
     let cPointSecond;
-    let hoBy;
-    let receiptBy;
 
     switch (role) {
         case "delivery": // delivery handover chekcpoint menjadi 2
             cPoint = 2;
             cPointSecond = 10;
-            hoBy = "Delivery";
-            receiptBy = "DPK";
             break;
         case "dpk": // delivery handover chekcpoint menjadi 4
             cPoint = 4;
             cPointSecond = 8;
-            hoBy = "DPK";
-            receiptBy = "Driver";
             break;
         case "driver":
             cPoint = 6;
-            hoBy = "Driver";
-            receiptBy = "DPK";
             break;
         case "marketing":
             cPoint = 12;
-            hoBy = "MKT";
-            receiptBy = "FAT";
             break;
         default:
             break;
@@ -78,7 +75,8 @@ const HistoryBundleHandover = () => {
                 createdby: item.createdby,
                 received: item.received,
                 receivedby: item.receivedby,
-                total_shipments: item.total_shipments
+                total_shipments: item.total_shipments,
+                attachment: item.attachment
             }));
 
             setData(mapped);
@@ -89,154 +87,84 @@ const HistoryBundleHandover = () => {
         }
     };
 
-    const fetchDetail = async (documentno) => {
-        if (!documentno) return [];
-        try {
-            setLoading(true);
-            const response = await fetch(
-                `${backEndUrl}/tms/listbundle/detail?documentno=${documentno}`
-            );
-            const result = await response.json();
-
-            const formatted = (result.data.listShipment || []).map((item, idx) => ({
-                id: idx + 1,
-                customer: item.customer,
-                sjno: item.documentno,
-                plantime: item.movementdate,
-                createdby_name: result.data.dataUser.createdby_name,
-                receivedby_name: result.data.dataUser.receivedby_name,
-                signature: result.data.dataUser.signature,
-                bundleNo: result.data.bundleNo,
-                bundleCheckpoint: parseInt(result.data.bundleCheckpoint),
-            }));
-
-
-            return formatted; // kembalikan data terbaru
-        } catch (err) {
-            console.error("Fetch error:", err);
-            return [];
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const previewPdf = async (documentno) => {
-        const latestData = await fetchDetail(documentno); // fetch terbaru sebelum cetak
-
-        console.log('latesData : ', latestData);
-
-
-        if (!latestData || latestData.length === 0) {
-            notification.error({
-                message: "Gagal Cetak",
-                description: "Data kosong, tidak bisa dicetak.",
-            });
-            return;
-        }
-
-        const createdByName = latestData[0].createdby_name || "-";
-        const receivedByName = latestData[0].receivedby_name || "-";
-        const signature = latestData[0].signature || "-";
-        const bundleNo = latestData[0].bundleNo || "-";
-        const bundleCheckpoint = latestData[0].bundleCheckpoint || 0;
-
-        switch (bundleCheckpoint) {
-            case 10:
-                hoBy = 'DPK'
-                receiptBy = 'MKT'
-                break;
-            default:
-                break;
-        }
-
-        if (receivedByName === "-") {
+    const handlePrint = async (record) => {
+        // 1. Validasi
+        const isWaiting = !record.received || record.received === "-";
+        if (isWaiting) {
             notification.warning({
                 message: "Belum Bisa Dicetak",
-                description: "Dokumen belum diterima. Silakan lakukan proses penerimaan terlebih dahulu.",
+                description: "Dokumen belum diterima. Silakan lakukan proses penerimaan dahulu.",
             });
             return;
         }
 
+        if (!record.attachment) {
+            notification.error({ message: "File PDF tidak ditemukan pada data ini." });
+            return;
+        }
 
+        try {
+            setProcessingPdf(true);
 
-        const tableBody = [
-            ["No", "Customer", "Shipment No", "Movement Date"],
-            ...latestData.map((item, idx) => [
-                idx + 1,
-                item.customer,
-                item.sjno,
-                formatDate(item.plantime),
-            ]),
-        ];
+            // 2. Fetch File Statis dari Backend
+            // Pastikan URL path statisnya benar sesuai config fastify static Anda
+            const staticUrl = `http://localhost:3200/files/handover/${record.attachment}`;
 
-        const today = new Date().toLocaleString("id-ID");
-        const docDefinition = {
-            pageSize: "A4",
-            pageMargins: [40, 40, 40, 40],
-            content: [
-                { text: `LIST HANDOVER (${hoBy} to ${receiptBy})`, style: "header", margin: [0, 0, 0, 2] },
-                { text: `No: ${bundleNo}`, fontSize: 12, alignment: "center", bold: false, margin: [0, 0, 0, 5] },
-                {
-                    table: {
-                        headerRows: 1,
-                        widths: ["auto", "*", "*", "*"],
-                        body: tableBody
-                    },
-                    layout: "lightHorizontalLines"
-                },
+            const response = await fetch(staticUrl);
+            if (!response.ok) throw new Error("Gagal mengunduh file PDF asli");
 
-                { text: "\n" },
+            // Ambil data binary (ArrayBuffer)
+            const existingPdfBytes = await response.arrayBuffer();
 
-                {
-                    columns: [
-                        { text: hoBy, alignment: "center", margin: [0, 3, 0, 10] },
-                        { text: '', alignment: "center" },
-                        { text: receiptBy, alignment: "center", margin: [0, 3, 0, 5] }
-                    ],
-                    margin: [0, 10, 0, 5]  // lebih rapat
-                },
+            // 3. Load ke PDF-Lib (Frontend Processing)
+            const pdfDoc = await PDFDocument.load(existingPdfBytes);
+            const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-                {
-                    columns: [
-                        {
-                            width: '33%',
-                            stack: [
-                                { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 100, y2: 0, lineWidth: 1 }] },
-                                { text: createdByName, alignment: "center", margin: [0, 3, 0, 0] },
-                            ],
-                            alignment: "center"
-                        },
-                        {
-                            width: '33%',
-                            stack: [
-                                { qr: signature, fit: 60, alignment: "center", margin: [0, 0, 0, 0] },
-                            ],
-                            alignment: "center"
-                        },
-                        {
-                            width: '33%',
-                            stack: [
-                                { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 100, y2: 0, lineWidth: 1 }] },
-                                { text: receivedByName, alignment: "center", margin: [0, 3, 0, 0] },
-                            ],
-                            alignment: "center"
-                        }
-                    ],
-                    columnGap: 0,
-                    margin: [0, 10, 0, 5]
-                },
-                { text: `Print Date: ${today}`, alignment: "left", fontSize: 10 }
-            ],
+            // 4. Tambahkan Text Print Date di Halaman Pertama
+            const pages = pdfDoc.getPages();
+            const firstPage = pages[0];
+            // const { height } = firstPage.getSize(); // jika butuh koordinat dinamis
 
-            styles: {
-                header: { fontSize: 14, bold: true, alignment: "center" },
-            }
-        };
+            const printDate = dayjs().tz("Asia/Jakarta").format("DD/MM/YYYY HH:mm") + " WIB";
 
+            firstPage.drawText(`Print Date: ${printDate}`, {
+                x: 40,
+                y: 15, // Posisi dari bawah kertas
+                size: 8,
+                font: helveticaFont,
+                color: rgb(0, 0, 0),
+            });
 
-        pdfMake.createPdf(docDefinition).open();
+            // 5. Simpan Hasil Edit menjadi Blob
+            const pdfBytes = await pdfDoc.save();
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+            // 6. Buat URL Object sementara
+            const objectUrl = URL.createObjectURL(blob);
+            setPdfBlobUrl(objectUrl);
+
+            // 7. Buka Modal
+            setIsModalOpen(true);
+
+        } catch (error) {
+            console.error(error);
+            notification.error({
+                message: "Gagal Memproses PDF",
+                description: error.message
+            });
+        } finally {
+            setProcessingPdf(false);
+        }
     };
 
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+        // Bersihkan memory URL agar tidak memory leak
+        if (pdfBlobUrl) {
+            URL.revokeObjectURL(pdfBlobUrl);
+            setPdfBlobUrl(null);
+        }
+    };
 
 
     const columns = [
@@ -299,21 +227,55 @@ const HistoryBundleHandover = () => {
             dataIndex: "actions",
             align: "center",
             render: (text, record) => (
-                <Button icon={<PrinterOutlined />} type="primary" onClick={() => previewPdf(record.documentno)} disabled={loading}>
-                    {loading ? "Loading..." : ""}
+                <Button
+                    icon={<PrinterOutlined />}
+                    type="primary"
+                    onClick={() => handlePrint(record)}
+                    loading={processingPdf} // Loading saat fetch & edit pdf
+                    disabled={loading}
+                >
+                    Print
                 </Button>
             )
         }
     ];
 
-
     return (
-        <Table
-            loading={loading}
-            columns={columns}
-            dataSource={data}
-            pagination={{ pageSize: 10 }}
-        />
+        <>
+            <Table
+                loading={loading}
+                columns={columns}
+                dataSource={data}
+                pagination={{ pageSize: 10 }}
+            />
+            <Modal
+                styles={{ content: { padding: 10 } }}
+                title="Preview Document"
+                open={isModalOpen}
+                onCancel={handleCloseModal}
+                footer={[
+                    <Button key="close" onClick={handleCloseModal}>
+                        Close
+                    </Button>
+                ]}
+                width={1000} // Lebar modal
+                style={{ top: 20 }}
+            >
+                {pdfBlobUrl ? (
+                    <iframe
+                        src={pdfBlobUrl}
+                        width="100%"
+                        height="600px"
+                        style={{ border: "none" }}
+                        title="PDF Preview"
+                    />
+                ) : (
+                    <div style={{ textAlign: 'center', padding: 50 }}>
+                        <Spin tip="Generating PDF Preview..." />
+                    </div>
+                )}
+            </Modal>
+        </>
     );
 };
 

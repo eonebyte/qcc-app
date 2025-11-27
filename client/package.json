@@ -26,6 +26,7 @@
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "luxon": "^3.7.1",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.394",
     "pdfmake": "^0.2.20",
     "prop-types": "^15.8.1",

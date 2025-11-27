@@ -267,7 +267,7 @@ export default function CheckInDropOnly() {
                     disabled={selectedRows.length === 0}
                     onClick={openHandoverModal}
                 >
-                    Check In
+                    Receipt
                 </Button>
             </div>
 

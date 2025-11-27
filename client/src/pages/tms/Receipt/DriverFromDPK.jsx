@@ -49,8 +49,6 @@ const DriverFromDPK = () => {
                     };
                 }).filter(bundle => bundle.shipments.length > 0);
 
-                console.log('rawBundles : ', rawBundles);
-
                 setData(processedData);
             } else {
                 setData([]);
@@ -131,11 +129,25 @@ const DriverFromDPK = () => {
         setIsModalRejectOpen(true);
     };
 
-    const handleRejectOk = () => {
+    const handleRejectOk = async () => {
         console.log("Rejecting item:", itemToReject);
-        notification.info({ message: 'Info', description: `Dokumen ${itemToReject.documentno} akan diproses untuk direject.` });
-        setIsModalRejectOpen(false);
-        setItemToReject(null);
+        try {
+
+            const res = await axios.post(`${backEndUrl}/tms/reject`, itemToReject, { withCredentials: true });
+
+            if (res.data.success) {
+                notification.success({ message: 'Info', description: `Dokumen ${itemToReject.documentno} akan diproses untuk direject.` });
+                fetchData();
+            } else {
+                notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
+            }
+        } catch (error) {
+            console.error("Submit error:", error);
+            notification.error({ message: 'Reject Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
+        } finally {
+            setIsModalRejectOpen(false);
+            setItemToReject(null);
+        }
     };
 
     const handleRejectCancel = () => {
