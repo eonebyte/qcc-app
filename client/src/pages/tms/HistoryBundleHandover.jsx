@@ -108,7 +108,7 @@ const HistoryBundleHandover = () => {
 
             // 2. Fetch File Statis dari Backend
             // Pastikan URL path statisnya benar sesuai config fastify static Anda
-            const staticUrl = `http://localhost:3200/files/handover/${record.attachment}`;
+            const staticUrl = `https://api-node.adyawinsa.com:3200/files/handover/${record.attachment}`;
 
             const response = await fetch(staticUrl);
             if (!response.ok) throw new Error("Gagal mengunduh file PDF asli");

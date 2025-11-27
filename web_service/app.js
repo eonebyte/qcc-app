@@ -106,7 +106,5 @@ export async function build(opts = {}) {
         return "I'm sorry, there was an error processing your request."
     })
 
-
-
     return app
 }
