@@ -23,7 +23,7 @@ import DPKToDelivery from './pages/tms/Handover/DPKToDelivery';
 import DeliveryFromDPK from './pages/tms/Receipt/DeliveryFromDPK';
 import DeliveryToMKT from './pages/tms/Handover/DeliveryToMKT';
 import MKTFromDelivery from './pages/tms/Receipt/MKTFromDelivery';
-import MKTToFAT from './pages/tms/Handover/MKTTOFAT';
+import MKTToFAT from './pages/tms/Handover/MKTToFAT';
 import FATFromMKT from './pages/tms/Receipt/FATFromMKT';
 import SettingConfig from './pages/tms/SettingConfig';
 
