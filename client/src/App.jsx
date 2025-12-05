@@ -25,6 +25,7 @@ import DeliveryToMKT from './pages/tms/Handover/DeliveryToMKT';
 import MKTFromDelivery from './pages/tms/Receipt/MKTFromDelivery';
 import MKTToFAT from './pages/tms/Handover/MKTTOFAT';
 import FATFromMKT from './pages/tms/Receipt/FATFromMKT';
+import SettingConfig from './pages/tms/SettingConfig';
 
 function App() {
   const dispatch = useDispatch();
@@ -48,6 +49,7 @@ function App() {
   // return <SupplyRawMaterial />;
   return (
     <Routes>
+      <Route path="/setting/config" element={<SettingConfig />} />
       <Route path="/" element={<Home />} />
       <Route path="/outstanding" element={<Outstanding />} />
       <Route path="/list/handover" element={<ListHandover />} />

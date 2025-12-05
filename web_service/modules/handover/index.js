@@ -2,10 +2,11 @@ import fp from 'fastify-plugin'
 import autoload from '@fastify/autoload'
 import { join } from 'desm'
 import oracleDB from "../../configs/dbOracle.js";
+import dayjs from "dayjs";
 
 
 class Handover {
-    async listDeliveryToDPK(server) {
+    async listDeliveryToDPK(server, startDate, endDate) {
         let connection;
         let dbClient;
 
@@ -17,6 +18,42 @@ class Handover {
         try {
             connection = await oracleDB.openConnection();
             dbClient = await server.pg.connect();
+
+
+            let finalStartDate;
+            let finalEndDate;
+
+            // Konfig Date
+            if (startDate && endDate) {
+                // Jika ada input user, gunakan input tersebut
+                finalStartDate = startDate;
+                finalEndDate = endDate;
+            } else {
+                // Jika null/kosong, ambil dari Config Database PG
+                const configQuery = `
+                                SELECT start_date
+                                FROM adw_trackingsj_config
+                                WHERE adw_trackingsj_config_id = 1
+                                LIMIT 1;
+                            `;
+
+                const configRes = await dbClient.query(configQuery);
+                const configDate = configRes.rows.length > 0
+                    ? configRes.rows[0].start_date
+                    : null;
+
+                if (!configDate) {
+                    return { success: false, message: "Config start_date not found" };
+                }
+
+                // Default: Dari config sampai Hari Ini (Current Date)
+                finalStartDate = dayjs(configDate).format("YYYY-MM-DD");
+                finalEndDate = dayjs().format("YYYY-MM-DD");
+            }
+
+            // Convert ke format YYYY-MM-DD untuk Oracle
+            const oracleStartDate = dayjs(finalStartDate).format("YYYY-MM-DD");
+            const oracleEndDate = dayjs(finalEndDate).format("YYYY-MM-DD");
 
             const queryOracle = `
                 SELECT
@@ -33,16 +70,18 @@ class Handover {
                     INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
                     INNER JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID 
                 WHERE
-                    mi.MOVEMENTDATE >= TRUNC(ADD_MONTHS(SYSDATE, -1), 'MM') + 20
-                    AND mi.DOCSTATUS = 'CO' AND ISSOTRX = 'Y' 
+                    mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
+                    AND mi.MOVEMENTDATE < TO_DATE(:endDate, 'YYYY-MM-DD') + 1 
+                    AND mi.DOCSTATUS = 'CO' 
+                    AND ISSOTRX = 'Y' 
                     AND cb.ISSUBCONTRACT = 'N'
                     AND co.ISMILKRUN = 'N'
-                    AND mi.ADW_TMS_ID IS NULL
+                    AND (mi.POREFERENCE NOT LIKE '%SAMPLE%' OR mi.POREFERENCE IS NULL)
                     ORDER BY mi.DOCUMENTNO DESC
                 `;
 
             // Eksekusi query tanpa parameter
-            const resultOracle = await connection.execute(queryOracle, [], {
+            const resultOracle = await connection.execute(queryOracle, { startDate: oracleStartDate, endDate: oracleEndDate }, {
                 outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT
             });
             const oracleRows = resultOracle.rows || [];
@@ -133,6 +172,26 @@ class Handover {
             connection = await oracleDB.openConnection();
             dbClient = await server.pg.connect();
 
+            // Konfig Date
+            const configQuery = `
+            SELECT start_date
+            FROM adw_trackingsj_config
+            WHERE adw_trackingsj_config_id = 1
+            LIMIT 1;
+        `;
+
+            const configRes = await dbClient.query(configQuery);
+            const startDate = configRes.rows.length > 0
+                ? configRes.rows[0].start_date
+                : null;
+
+            if (!startDate) {
+                return { success: false, message: "Config start_date not found" };
+            }
+
+            // Convert ke format YYYY-MM-DD untuk Oracle
+            const oracleStartDate = dayjs(startDate).format("YYYY-MM-DD");
+
             const queryOracle = `
                 SELECT
                     mi.M_INOUT_ID,
@@ -148,16 +207,15 @@ class Handover {
                     INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
                     INNER JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID 
                 WHERE
-                    mi.MOVEMENTDATE >= TRUNC(ADD_MONTHS(SYSDATE, -1), 'MM') + 20
+                    mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
                     AND mi.DOCSTATUS = 'CO' AND ISSOTRX = 'Y' 
                     AND cb.ISSUBCONTRACT = 'N'
                     AND co.ISMILKRUN = 'N'
-                    AND mi.ADW_TMS_ID IS NULL
                     ORDER BY mi.DOCUMENTNO DESC
                 `;
 
             // Eksekusi query tanpa parameter
-            const resultOracle = await connection.execute(queryOracle, [], {
+            const resultOracle = await connection.execute(queryOracle, { startDate: oracleStartDate }, {
                 outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT
             });
             const oracleRows = resultOracle.rows || [];
@@ -166,32 +224,45 @@ class Handover {
                 return { success: true, count: 0, data: [] };
             }
 
-            const queryPostgres = `SELECT m_inout_id, checkpoin_id FROM adw_trackingsj`;
+            const queryPostgres = `
+                SELECT adw_trackingsj_id, m_inout_id, checkpoin_id, cancelrequest
+                FROM adw_trackingsj
+                WHERE 
+                    (checkpoin_id = '3' AND cancelrequest = 'N')
+                    OR
+                    (checkpoin_id = '5' AND cancelrequest = 'Y')
+            `;
+
             const resultPg = await dbClient.query(queryPostgres);
 
             const existingTrackingData = new Map(
-                resultPg.rows.map(row => [String(row.m_inout_id), row.checkpoin_id])
+                resultPg.rows.map(row => [
+                    String(row.m_inout_id),
+                    { checkpoint: row.checkpoin_id, cancelrequest: row.cancelrequest, adw_trackingsj_id: row.adw_trackingsj_id }
+                ])
             );
 
             const filteredData = oracleRows.filter(oracleRow => {
-                const oracleId = String(oracleRow.M_INOUT_ID);
-
-                // Hanya ambil yang ADA di adw_trackingsj dan checkpoint = 3
-                return existingTrackingData.get(oracleId) == 3;
+                const data = existingTrackingData.get(String(oracleRow.M_INOUT_ID));
+                return data !== undefined;
             });
 
 
+
             const mappingData = filteredData.map(row => {
-                const oracleId = String(row.M_INOUT_ID);
+                const track = existingTrackingData.get(String(row.M_INOUT_ID));
 
                 return {
                     m_inout_id: row.M_INOUT_ID,
                     documentno: row.DOCUMENTNO,
                     customer: row.CUSTOMER,
                     plantime: row.PLANTIME,
-                    checkpoin_id: 3, // Karena filter sudah memastikan selalu 3
+                    checkpoin_id: track.checkpoint,
+                    cancelrequest: track.cancelrequest,
+                    adw_trackingsj_id: track.adw_trackingsj_id
                 };
             });
+
 
             return {
                 success: true,
@@ -255,7 +326,7 @@ class Handover {
             const seq = seqRow.rows[0].seq;
 
             const yymm = new Date().toISOString().slice(2, 7).replace("-", "");
-            const documentno = `HOPD${yymm}${String(seq).padStart(4, "0")}`;
+            const documentno = `HOPT${yymm}${String(seq).padStart(4, "0")}`;
 
 
             // Insert group
@@ -371,7 +442,7 @@ class Handover {
             await dbClient.query('BEGIN');
             let result;
 
-            const { data, driverId, tnkbId } = payload;
+            const { data, driverId, driverName, tnkbId } = payload;
 
             if (!data || !Array.isArray(data) || data.length === 0) {
                 throw { statusCode: 400, message: 'Data is required for handover.' };
@@ -389,7 +460,7 @@ class Handover {
             const seq = seqRow.rows[0].seq;
 
             const yymm = new Date().toISOString().slice(2, 7).replace("-", "");
-            const documentno = `HODD${yymm}${String(seq).padStart(4, "0")}`;
+            const documentno = `HOTD${yymm}${String(seq).padStart(4, "0")}`;
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
@@ -408,6 +479,13 @@ class Handover {
             const groupId = groupRes.rows[0].adw_handover_group_id;
             if (!groupId) throw new Error("Failed to insert handover group");
 
+
+            await dbClient.query(`
+                UPDATE adw_handover_group
+                SET drivername = $1, tnkb_id = $2, updated = NOW(), updatedby = $3
+                WHERE adw_handover_group_id = $4
+            `, [driverName, tnkbId, userId, groupId]);
+
             // ============================================================
             // 2️⃣ UPDATE adw_trackingsj (checkpoint 3 → 4)
             // ============================================================
@@ -418,8 +496,9 @@ class Handover {
                 checkpoin_id = $1,
                 updated = NOW(),
                 updatedby = $2,
-                driverby = $4,
-                tnkb_id = $5
+                drivername = $4,
+                tnkb_id = $5,
+                driver_id = $7
             WHERE 
                 m_inout_id = ANY($3::integer[])
                 AND checkpoin_id = $6
@@ -430,9 +509,10 @@ class Handover {
                 '4',        // pindah checkpoint ke 4
                 userId,
                 inoutIds,
-                driverId,
+                driverName,
                 tnkbId,
-                '3'         // hanya checkpoint 3
+                '3',         // hanya checkpoint 3
+                driverId
             ];
 
             const updateResult = await dbClient.query(updateQuery, updateValues);
@@ -485,7 +565,7 @@ class Handover {
                     'DPK',
                     'Driver',
                     trackingId,
-                    '3' // checkpoint sebelumnya
+                    '4'
                 ]);
             }
 
@@ -530,7 +610,7 @@ class Handover {
             // -----------------------------------------------------------
             // Kita cari barang yang MEMANG sedang di Checkpoint 6
             const queryPostgres = `
-            SELECT m_inout_id, checkpoin_id 
+            SELECT adw_trackingsj_id, m_inout_id, checkpoin_id, driverby, tnkb_id, drivername, cancelrequest 
             FROM adw_trackingsj 
             WHERE checkpoin_id = '5' AND (trip_mode <> 'DO' OR trip_mode IS NULL)
         `;
@@ -541,6 +621,10 @@ class Handover {
             if (pgRows.length === 0) {
                 return { success: true, count: 0, data: [] };
             }
+
+            const pgMap = new Map(
+                pgRows.map(row => [Number(row.m_inout_id), row])
+            );
 
             // Ambil daftar ID-nya untuk di-query ke Oracle
             const mInoutIds = [...new Set(pgRows.map(row => row.m_inout_id))];
@@ -567,6 +651,7 @@ class Handover {
                 INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
             WHERE
                 mi.M_INOUT_ID IN (${bindVars})
+                -- AND mi.ADW_TMS_ID IS NOT NULL
             ORDER BY mi.DOCUMENTNO DESC
         `;
 
@@ -579,12 +664,18 @@ class Handover {
 
             // Mapping hasil Oracle agar formatnya sesuai yang diinginkan
             const finalData = oracleRows.map(row => {
+                const pgInfo = pgMap.get(row.M_INOUT_ID) || {};
                 return {
                     m_inout_id: row.M_INOUT_ID,
                     documentno: row.DOCUMENTNO,
                     customer: row.CUSTOMER,
                     plantime: row.PLANTIME,
                     checkpoin_id: 5,
+                    adw_trackingsj_id: pgInfo.adw_trackingsj_id || null,
+                    driverby: pgInfo.driverby || null,
+                    tnkb_id: pgInfo.tnkb_id || null,
+                    drivername: pgInfo.drivername,
+                    cancelrequest: pgInfo.cancelrequest,
                 };
             });
 
@@ -624,7 +715,7 @@ class Handover {
             // -----------------------------------------------------------
             // Kita cari barang yang MEMANG sedang di Checkpoint 6
             const queryPostgres = `
-            SELECT m_inout_id, checkpoin_id 
+            SELECT m_inout_id, checkpoin_id, driverby, tnkb_id, drivername  
             FROM adw_trackingsj 
             WHERE checkpoin_id = '5' AND trip_mode = 'DO'
         `;
@@ -635,6 +726,10 @@ class Handover {
             if (pgRows.length === 0) {
                 return { success: true, count: 0, data: [] };
             }
+
+            const pgMap = new Map(
+                pgRows.map(row => [Number(row.m_inout_id), row])
+            );
 
             // Ambil daftar ID-nya untuk di-query ke Oracle
             const mInoutIds = [...new Set(pgRows.map(row => row.m_inout_id))];
@@ -661,6 +756,7 @@ class Handover {
                 INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
             WHERE
                 mi.M_INOUT_ID IN (${bindVars})
+                AND mi.ADW_TMS_ID IS NOT NULL
             ORDER BY mi.DOCUMENTNO DESC
         `;
 
@@ -673,12 +769,16 @@ class Handover {
 
             // Mapping hasil Oracle agar formatnya sesuai yang diinginkan
             const finalData = oracleRows.map(row => {
+                const pgInfo = pgMap.get(row.M_INOUT_ID) || {};
                 return {
                     m_inout_id: row.M_INOUT_ID,
                     documentno: row.DOCUMENTNO,
                     customer: row.CUSTOMER,
                     plantime: row.PLANTIME,
                     checkpoin_id: 6,
+                    driverby: pgInfo.driverby || null,
+                    drivername: pgInfo.drivername || null,
+                    tnkb_id: pgInfo.tnkb_id || null,
                 };
             });
 
@@ -701,7 +801,7 @@ class Handover {
         }
     }
 
-    async processDriverToCustomer(server, payload, userId) {
+    async processDriverToCustomer(server, payload, userName) {
         const dbClient = await server.pg.connect();
 
         try {
@@ -709,7 +809,7 @@ class Handover {
 
             let result;
 
-            const { data, driverId, tnkbId, tripMode } = payload;
+            const { data, driverName, tnkbId, tripMode } = payload;
 
             if (!data || !Array.isArray(data) || data.length === 0) {
                 throw { statusCode: 400, message: 'Data is required for handover.' };
@@ -725,16 +825,48 @@ class Handover {
                 const updateTripMode = `
                 UPDATE adw_trackingsj
                 SET trip_mode = 'DO',
-                    updated = NOW(),
-                    updatedby = $1
-                WHERE m_inout_id = ANY($2::int[])
+                    updated = NOW()
+                WHERE m_inout_id = ANY($1::int[])
                 RETURNING adw_trackingsj_id, m_inout_id, trip_mode;
             `;
 
                 const res = await dbClient.query(updateTripMode, [
-                    userId,
                     inoutIds
                 ]);
+
+                const insertEventQuery = `
+                    INSERT INTO adw_trackingsj_events(
+                        ad_client_id, ad_org_id, username,
+                        adw_event_type, adw_from_actor, adw_to_actor,
+                        adw_trackingsj_id, created, isactive,
+                        updated, checkpoin_id
+                    ) VALUES 
+                    (
+                        1000003, 1000003, $1,
+                        'HANDOVER', $2, $3,
+                        $4, NOW(), 'Y',
+                        NOW(), $5
+                    ),
+                    (
+                        1000003, 1000003, $1,
+                        'ACCEPTANCE', $2, $3,
+                        $4, NOW(), 'Y',
+                        NOW(), $5
+                    )
+                `;
+
+                // 🔥 Insert event per trackingId
+                for (const row of res.rows) {
+                    const trackingId = row.adw_trackingsj_id;
+
+                    await dbClient.query(insertEventQuery, [
+                        userName,
+                        'Driver',
+                        'Customer',
+                        trackingId,
+                        '5'
+                    ]);
+                }
 
                 await dbClient.query('COMMIT');
 
@@ -746,24 +878,26 @@ class Handover {
 
             const seqRow = await dbClient.query(`
             SELECT nextval('adw_handover_group_seq') AS seq
-        `);
+            `);
             const seq = seqRow.rows[0].seq;
 
             const yymm = new Date().toISOString().slice(2, 7).replace("-", "");
-            const documentno = `HIDD${yymm}${String(seq).padStart(4, "0")}`;
+            const documentno = `HIDT${yymm}${String(seq).padStart(4, "0")}`;
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes
-            ) VALUES ($1, $2, $3, $4)
+                createdby, documentno, checkpoint, notes, drivername, tnkb_id
+            ) VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING adw_handover_group_id;
         `;
 
             const groupRes = await dbClient.query(insertGroupQuery, [
-                userId,
+                0,
                 documentno,
                 '6',
-                'handover driver ke dpk'
+                'handover driver ke dpk',
+                driverName,
+                tnkbId
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -778,22 +912,16 @@ class Handover {
             SET
                 checkpoin_id = $1,
                 updated = NOW(),
-                updatedby = $2,
-                driverby = $4,
-                tnkb_id = $5,
                 trip_mode = 'RT'
             WHERE 
-                m_inout_id = ANY($3::integer[])
-                AND checkpoin_id = $6
+                m_inout_id = ANY($2::integer[])
+                AND checkpoin_id = $3
             RETURNING adw_trackingsj_id, m_inout_id;
         `;
 
             const updateValues = [
                 '6',        // pindah checkpoint ke 6
-                userId,
                 inoutIds,
-                driverId,
-                tnkbId,
                 '5'         // hanya checkpoint 5
             ];
 
@@ -805,55 +933,76 @@ class Handover {
 
             const updatedTracking = updateResult.rows;
 
-            // ============================================================
-            // 3️⃣ INSERT adw_group_sj + INSERT event per SJ
-            // ============================================================
+            const eventDriverToCustQuery = `
+            INSERT INTO adw_trackingsj_events(
+                ad_client_id, ad_org_id, username,
+                adw_event_type, adw_from_actor, adw_to_actor,
+                adw_trackingsj_id, created, isactive,
+                updated, checkpoin_id
+            ) VALUES 
+            (
+                1000003, 1000003, $1,
+                'HANDOVER', 'Driver', 'Customer',
+                $2, NOW(), 'Y',
+                NOW(), $3
+            ),
+            (
+                1000003, 1000003, $1,
+                'ACCEPTANCE', 'Driver', 'Customer',
+                $2, NOW(), 'Y',
+                NOW(), $3
+            )
+        `;
+
+            // Query B: Driver ke DPK (Handover saja)
+            const eventDriverToDPKQuery = `
+            INSERT INTO adw_trackingsj_events(
+                ad_client_id, ad_org_id, username,
+                adw_event_type, adw_from_actor, adw_to_actor,
+                adw_trackingsj_id, created, isactive,
+                updated, checkpoin_id
+            ) VALUES (
+                1000003, 1000003, $1,
+                'HANDOVER', 'Driver', 'DPK',
+                $2, NOW(), 'Y',
+                NOW(), $3
+            );
+        `;
+
+            const insertPivotQuery = `
+            INSERT INTO adw_group_sj (
+                adw_handover_group_id, adw_trackingsj_id, checkpoint
+            ) VALUES ($1, $2, $3);
+        `;
+
 
             for (const row of updatedTracking) {
                 const trackingId = row.adw_trackingsj_id;
 
-                // 3.1 Insert ke pivot adw_group_sj
-                const insertPivotQuery = `
-                INSERT INTO adw_group_sj (
-                    adw_handover_group_id,
-                    adw_trackingsj_id,
-                    checkpoint
-                ) VALUES ($1, $2, $3);
-            `;
-
+                // 3.1 Insert ke Pivot
                 await dbClient.query(insertPivotQuery, [
                     groupId,
                     trackingId,
                     '5'
                 ]);
 
-                // 3.2 Insert event
-                const insertEventQuery = `
-                INSERT INTO adw_trackingsj_events(
-                    ad_client_id, ad_org_id, ad_user_id,
-                    adw_event_type, adw_from_actor, adw_to_actor,
-                    adw_trackingsj_id, created, createdby, isactive,
-                    updated, updatedby, checkpoin_id
-                ) VALUES(
-                    1000003, 1000003, $1,
-                    'HANDOVER', $2, $3,
-                    $4, NOW(), $1, 'Y',
-                    NOW(), $1, $5
-                );
-            `;
-
-                await dbClient.query(insertEventQuery, [
-                    userId,
-                    'Driver',
-                    'Customer Auto DPK',
+                // 3.2 Insert Event: Driver -> Customer (Handover & Acceptance)
+                // Logika: Menyelesaikan urusan dengan customer dulu (barang diterima/ditolak/kembali)
+                await dbClient.query(eventDriverToCustQuery, [
+                    userName,
                     trackingId,
-                    '5' // checkpoint sebelumnya
+                    '5'
+                ]);
+
+                // 3.3 Insert Event: Driver -> DPK (Handover)
+                // Logika: Setelah urusan customer selesai, driver menyerahkan bukti/sisa ke DPK
+                await dbClient.query(eventDriverToDPKQuery, [
+                    userName,
+                    trackingId,
+                    '5'
                 ]);
             }
 
-            // ============================================================
-            // 4️⃣ Response
-            // ============================================================
 
             result = {
                 handover_group_id: groupId,
@@ -874,7 +1023,7 @@ class Handover {
         }
     }
 
-    async processDriverToCustomerDo(server, payload, userId) {
+    async processDriverToCustomerDo(server, payload, userName) {
         const dbClient = await server.pg.connect();
 
         try {
@@ -882,7 +1031,7 @@ class Handover {
 
             let result;
 
-            const { data, driverId, tnkbId } = payload;
+            const { data, driverName, tnkbId } = payload;
 
             if (!data || !Array.isArray(data) || data.length === 0) {
                 throw { statusCode: 400, message: 'Data is required for handover.' };
@@ -897,20 +1046,22 @@ class Handover {
             const seq = seqRow.rows[0].seq;
 
             const yymm = new Date().toISOString().slice(2, 7).replace("-", "");
-            const documentno = `HIDD${yymm}${String(seq).padStart(4, "0")}`;
+            const documentno = `HIDT${yymm}${String(seq).padStart(4, "0")}`;
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes
-            ) VALUES ($1, $2, $3, $4)
+                createdby, documentno, checkpoint, notes, drivername, tnkb_id
+            ) VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING adw_handover_group_id;
         `;
 
             const groupRes = await dbClient.query(insertGroupQuery, [
-                userId,
+                0,
                 documentno,
                 '6',
-                'handover driver ke dpk'
+                'handover driver ke dpk',
+                driverName,
+                tnkbId
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -925,22 +1076,16 @@ class Handover {
             SET
                 checkpoin_id = $1,
                 updated = NOW(),
-                updatedby = $2,
-                driverby = $4,
-                tnkb_id = $5,
                 trip_mode = 'RT'
             WHERE 
-                m_inout_id = ANY($3::integer[])
-                AND checkpoin_id = $6
+                m_inout_id = ANY($2::integer[])
+                AND checkpoin_id = $3
             RETURNING adw_trackingsj_id, m_inout_id;
         `;
 
             const updateValues = [
                 '6',        // pindah checkpoint ke 6
-                userId,
                 inoutIds,
-                driverId,
-                tnkbId,
                 '5'         // hanya checkpoint 5
             ];
 
@@ -977,22 +1122,22 @@ class Handover {
                 // 3.2 Insert event
                 const insertEventQuery = `
                 INSERT INTO adw_trackingsj_events(
-                    ad_client_id, ad_org_id, ad_user_id,
+                    ad_client_id, ad_org_id, username,
                     adw_event_type, adw_from_actor, adw_to_actor,
-                    adw_trackingsj_id, created, createdby, isactive,
-                    updated, updatedby, checkpoin_id
-                ) VALUES(
+                    adw_trackingsj_id, created, isactive,
+                    updated, checkpoin_id
+                ) VALUES (
                     1000003, 1000003, $1,
                     'HANDOVER', $2, $3,
-                    $4, NOW(), $1, 'Y',
-                    NOW(), $1, $5
-                );
+                    $4, NOW(), 'Y',
+                    NOW(), $5
+                )
             `;
 
                 await dbClient.query(insertEventQuery, [
-                    userId,
+                    userName,
                     'Driver',
-                    'Customer Auto DPK',
+                    'DPK',
                     trackingId,
                     '5' // checkpoint sebelumnya
                 ]);
@@ -1038,7 +1183,7 @@ class Handover {
             // -----------------------------------------------------------
             // Kita cari barang yang MEMANG sedang di Checkpoint 6
             const queryPostgres = `
-            SELECT m_inout_id, checkpoin_id 
+            SELECT m_inout_id, checkpoin_id, driverby, tnkb_id 
             FROM adw_trackingsj 
             WHERE checkpoin_id = '7'
         `;
@@ -1049,6 +1194,10 @@ class Handover {
             if (pgRows.length === 0) {
                 return { success: true, count: 0, data: [] };
             }
+
+            const pgMap = new Map(
+                pgRows.map(row => [Number(row.m_inout_id), row])
+            );
 
             // Ambil daftar ID-nya untuk di-query ke Oracle
             const mInoutIds = [...new Set(pgRows.map(row => row.m_inout_id))];
@@ -1087,12 +1236,15 @@ class Handover {
 
             // Mapping hasil Oracle agar formatnya sesuai yang diinginkan
             const finalData = oracleRows.map(row => {
+                const pgInfo = pgMap.get(row.M_INOUT_ID) || {};
                 return {
                     m_inout_id: row.M_INOUT_ID,
                     documentno: row.DOCUMENTNO,
                     customer: row.CUSTOMER,
                     plantime: row.PLANTIME,
                     checkpoin_id: 7,
+                    driverby: pgInfo.driverby || null,
+                    tnkb_id: pgInfo.tnkb_id || null,
                 };
             });
 
@@ -1123,7 +1275,7 @@ class Handover {
 
             let result;
 
-            const { data } = payload;
+            const { data, driverId, tnkbId } = payload;
 
             if (!data || !Array.isArray(data) || data.length === 0) {
                 throw { statusCode: 400, message: 'Data is required for handover.' };
@@ -1139,12 +1291,12 @@ class Handover {
             const seq = seqRow.rows[0].seq;
 
             const yymm = new Date().toISOString().slice(2, 7).replace("-", "");
-            const documentno = `HIDP${yymm}${String(seq).padStart(4, "0")}`;
+            const documentno = `HITP${yymm}${String(seq).padStart(4, "0")}`;
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes
-            ) VALUES ($1, $2, $3, $4)
+                createdby, documentno, checkpoint, notes, driverby, tnkb_id
+            ) VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING adw_handover_group_id;
         `;
 
@@ -1152,7 +1304,9 @@ class Handover {
                 userId,
                 documentno,
                 '8',
-                'handover dpk ke delivery'
+                'handover dpk ke delivery',
+                driverId,
+                tnkbId
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -1276,7 +1430,7 @@ class Handover {
             // -----------------------------------------------------------
             // Kita cari barang yang MEMANG sedang di Checkpoint 6
             const queryPostgres = `
-            SELECT m_inout_id, checkpoin_id 
+            SELECT m_inout_id, checkpoin_id, driverby, tnkb_id 
             FROM adw_trackingsj 
             WHERE checkpoin_id = '9'
         `;
@@ -1287,6 +1441,10 @@ class Handover {
             if (pgRows.length === 0) {
                 return { success: true, count: 0, data: [] };
             }
+
+            const pgMap = new Map(
+                pgRows.map(row => [Number(row.m_inout_id), row])
+            );
 
             // Ambil daftar ID-nya untuk di-query ke Oracle
             const mInoutIds = [...new Set(pgRows.map(row => row.m_inout_id))];
@@ -1325,12 +1483,15 @@ class Handover {
 
             // Mapping hasil Oracle agar formatnya sesuai yang diinginkan
             const finalData = oracleRows.map(row => {
+                const pgInfo = pgMap.get(row.M_INOUT_ID) || {};
                 return {
                     m_inout_id: row.M_INOUT_ID,
                     documentno: row.DOCUMENTNO,
                     customer: row.CUSTOMER,
                     plantime: row.PLANTIME,
                     checkpoin_id: 9,
+                    driverby: pgInfo.driverby || null,
+                    tnkb_id: pgInfo.tnkb_id || null,
                 };
             });
 
@@ -1361,7 +1522,7 @@ class Handover {
 
             let result;
 
-            const { data } = payload;
+            const { data, driverId, tnkbId } = payload;
 
             if (!data || !Array.isArray(data) || data.length === 0) {
                 throw { statusCode: 400, message: 'Data is required for handover.' };
@@ -1381,8 +1542,8 @@ class Handover {
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes
-            ) VALUES ($1, $2, $3, $4)
+                createdby, documentno, checkpoint, notes, driverby, tnkb_id
+            ) VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING adw_handover_group_id;
         `;
 
@@ -1390,7 +1551,9 @@ class Handover {
                 userId,
                 documentno,
                 '10',
-                'handover delivery ke mkt'
+                'handover delivery ke mkt',
+                driverId,
+                tnkbId
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -1468,7 +1631,7 @@ class Handover {
                 await dbClient.query(insertEventQuery, [
                     userId,
                     'Delivery',
-                    'MKT',
+                    'Marketing',
                     trackingId,
                     '9' // checkpoint sebelumnya
                 ]);
@@ -1514,7 +1677,7 @@ class Handover {
             // -----------------------------------------------------------
             // Kita cari barang yang MEMANG sedang di Checkpoint 6
             const queryPostgres = `
-            SELECT m_inout_id, checkpoin_id 
+            SELECT m_inout_id, checkpoin_id, driverby, tnkb_id 
             FROM adw_trackingsj 
             WHERE checkpoin_id = '11'
         `;
@@ -1525,6 +1688,10 @@ class Handover {
             if (pgRows.length === 0) {
                 return { success: true, count: 0, data: [] };
             }
+
+            const pgMap = new Map(
+                pgRows.map(row => [Number(row.m_inout_id), row])
+            );
 
             // Ambil daftar ID-nya untuk di-query ke Oracle
             const mInoutIds = [...new Set(pgRows.map(row => row.m_inout_id))];
@@ -1545,7 +1712,8 @@ class Handover {
                     TO_CHAR(mi.MOVEMENTDATE, 'YYYY-MM-DD') || ' ' ||
                     TO_CHAR(mi.PLANTIME, 'HH24:MI:SS'),
                     'YYYY-MM-DD HH24:MI:SS'
-                ) AS PLANTIME
+                ) AS PLANTIME,
+                mi.SPPNO
             FROM
                 M_INOUT mi
                 INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
@@ -1563,12 +1731,16 @@ class Handover {
 
             // Mapping hasil Oracle agar formatnya sesuai yang diinginkan
             const finalData = oracleRows.map(row => {
+                const pgInfo = pgMap.get(row.M_INOUT_ID) || {};
                 return {
                     m_inout_id: row.M_INOUT_ID,
                     documentno: row.DOCUMENTNO,
                     customer: row.CUSTOMER,
                     plantime: row.PLANTIME,
+                    sppno: row.SPPNO,
                     checkpoin_id: 9,
+                    driverby: pgInfo.driverby || null,
+                    tnkb_id: pgInfo.tnkb_id || null,
                 };
             });
 
@@ -1599,7 +1771,7 @@ class Handover {
 
             let result;
 
-            const { data } = payload;
+            const { data, driverId, tnkbId } = payload;
 
             if (!data || !Array.isArray(data) || data.length === 0) {
                 throw { statusCode: 400, message: 'Data is required for handover.' };
@@ -1619,8 +1791,8 @@ class Handover {
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes
-            ) VALUES ($1, $2, $3, $4)
+                createdby, documentno, checkpoint, notes, driverby, tnkb_id
+            ) VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING adw_handover_group_id;
         `;
 
@@ -1628,7 +1800,9 @@ class Handover {
                 userId,
                 documentno,
                 '12',
-                'handover mkt ke fat'
+                'handover mkt ke fat',
+                driverId,
+                tnkbId
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -1705,7 +1879,7 @@ class Handover {
 
                 await dbClient.query(insertEventQuery, [
                     userId,
-                    'MKT',
+                    'Marketing',
                     'FAT',
                     trackingId,
                     '11' // checkpoint sebelumnya

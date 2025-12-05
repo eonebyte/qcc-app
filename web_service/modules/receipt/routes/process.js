@@ -14,8 +14,8 @@ export default async (server, opts) => {
     server.post('/process/driver/from/dpk', async (request, reply) => {
         try {
             const { data: bundles } = request.body;
-            const userId = request.user.ad_user_id;
-            const result = await server.receipt.processDriverFromDPK(server, bundles, userId);
+            const userName = request.user.name;
+            const result = await server.receipt.processDriverFromDPK(server, bundles, userName);
             reply.send({ success: true, message: 'fetch successfully', data: result });
         } catch (error) {
             request.log.error(error);

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Tabs, Card, notification, Badge, Tag, Modal, Spin } from "antd";
-import { AndroidOutlined, AppleOutlined, PrinterOutlined } from "@ant-design/icons";
+import { Table, Button, Tabs, Card, notification, Badge, Tag, Modal, Spin, message } from "antd";
+import { AndroidOutlined, AppleOutlined, DownloadOutlined, FileSyncOutlined, PrinterOutlined, SearchOutlined, SyncOutlined } from "@ant-design/icons";
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
+import * as XLSX from "xlsx";
 pdfMake.vfs = pdfFonts.vfs;
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
@@ -12,6 +13,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
+const backEndUrlAttachment = import.meta.env.VITE_BACKEND_URL_ATTACHMENT || 'http://localhost:3200';
 
 
 dayjs.extend(utc);
@@ -32,6 +34,24 @@ const HistoryBundleHandover = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [pdfBlobUrl, setPdfBlobUrl] = useState(null); // URL untuk iframe
     const [processingPdf, setProcessingPdf] = useState(false); // Loading saat edit PDF
+
+    const [bundleSearch, setBundleSearch] = useState("");
+
+
+    const handleSearchBundle = () => {
+        if (!bundleSearch.trim()) {
+            message.warning("Masukkan Bundle No untuk filter");
+            return;
+        }
+
+        loadData(bundleSearch); // ⬅ langsung ke server
+    };
+
+
+    const handleResetFilter = () => {
+        setBundleSearch("");
+        loadData(""); // tanpa parameter → fetch semua data
+    };
 
 
     useEffect(() => {
@@ -64,7 +84,9 @@ const HistoryBundleHandover = () => {
     const loadData = async () => {
         try {
             setLoading(true)
-            const res = await fetch(`${backEndUrl}/tms/listbundle?checkpoint=${cPoint}&checkpoint_second=${cPointSecond}`);
+            const res = await fetch(`${backEndUrl}/tms/listbundle?checkpoint=${cPoint}&checkpoint_second=${cPointSecond}`,
+                { credentials: "include", }
+            );
             const json = await res.json();
 
 
@@ -108,7 +130,7 @@ const HistoryBundleHandover = () => {
 
             // 2. Fetch File Statis dari Backend
             // Pastikan URL path statisnya benar sesuai config fastify static Anda
-            const staticUrl = `https://api-node.adyawinsa.com:3200/files/handover/${record.attachment}`;
+            const staticUrl = `${backEndUrlAttachment}/files/handover/${record.attachment}`;
 
             const response = await fetch(staticUrl);
             if (!response.ok) throw new Error("Gagal mengunduh file PDF asli");
@@ -127,9 +149,11 @@ const HistoryBundleHandover = () => {
 
             const printDate = dayjs().tz("Asia/Jakarta").format("DD/MM/YYYY HH:mm") + " WIB";
 
+            const { height } = firstPage.getSize();
+
             firstPage.drawText(`Print Date: ${printDate}`, {
                 x: 40,
-                y: 15, // Posisi dari bawah kertas
+                y: height - 15, // Posisi dari bawah kertas
                 size: 8,
                 font: helveticaFont,
                 color: rgb(0, 0, 0),
@@ -164,6 +188,41 @@ const HistoryBundleHandover = () => {
             URL.revokeObjectURL(pdfBlobUrl);
             setPdfBlobUrl(null);
         }
+    };
+
+    const exportExcel = () => {
+        if (!data || data.length === 0) {
+            message.warning("Tidak ada data untuk diexport");
+            return;
+        }
+
+        // 1. Siapkan data untuk Excel
+        const excelData = data.map((item, index) => ({
+            No: index + 1,
+            "Bundle No": item.documentno,
+            "Total Shipments": item.total_shipments,
+            "Date Handover": formatDate(item.created),
+            "Date Receipt": formatDate(item.received),
+            Status:
+                !item.received || item.received === "-" || item.received === ""
+                    ? "Waiting Receipt"
+                    : "Completed",
+        }));
+
+        // 2. Convert JSON → Sheet
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+        // 3. Buat workbook
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "History Delivery");
+
+        // 4. Nama file
+        const filename = `History_Delivery_${dayjs().format(
+            "YYYYMMDD_HHmmss"
+        )}.xlsx`;
+
+        // 5. Export file
+        XLSX.writeFile(workbook, filename);
     };
 
 
@@ -242,6 +301,34 @@ const HistoryBundleHandover = () => {
 
     return (
         <>
+            <div style={{ marginBottom: 10, marginLeft: 10, display: "flex", gap: 10 }}>
+                {/* Input Filter Bundle */}
+                <input
+                    type="text"
+                    placeholder="Cari Bundle No..."
+                    value={bundleSearch}
+                    onChange={(e) => setBundleSearch(e.target.value)}
+                    style={{
+                        padding: "6px 10px",
+                        borderRadius: 6,
+                        border: "1px solid #ccc",
+                        width: 200
+                    }}
+                />
+
+                {/* Tombol Search */}
+                <Button icon={<SearchOutlined />} type="primary" onClick={handleSearchBundle}>
+                </Button>
+
+
+                <Button icon={<SyncOutlined />} type="default" onClick={handleResetFilter}>
+                </Button>
+
+                <Button icon={<DownloadOutlined />} type="default" onClick={exportExcel}>
+                </Button>
+
+
+            </div>
             <Table
                 loading={loading}
                 columns={columns}

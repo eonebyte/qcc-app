@@ -6,14 +6,23 @@ import { join } from 'desm'
 
 dotenv.config()
 
+
+const ISPROD = process.env.ISPROD;
+
 const opts = {
     logger: {
         level: 'info'
-    },
-    https: {
+    }
+}
+
+if (ISPROD === 'Y') {
+    opts.https = {
         key: fs.readFileSync(join(import.meta.url, 'ssl', 'adyawinsa.com.key')),
         cert: fs.readFileSync(join(import.meta.url, 'ssl', 'sectigo_adyawinsa.com.crt')),
-    }
+    };
+    console.log('Running in PRODUCTION mode -> HTTPS enabled');
+} else {
+    console.log('Running in DEVELOPMENT mode -> HTTP only (no SSL)');
 }
 
 // We want to use pino-pretty only if there is a human watching this,

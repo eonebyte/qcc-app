@@ -29,7 +29,7 @@ const DeliveryFromDPK = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${backEndUrl}/receipt/list/delivery/from/dpk`);
+            const res = await axios.get(`${backEndUrl}/receipt/list/delivery/from/dpk`, { withCredentials: true });
             if (res.data.data && res.data.data.success) {
                 const rawBundles = res.data.data.data || [];
 

@@ -1,7 +1,9 @@
 export default async (server, opts) => {
     server.get('/list/delivery/to/dpk', async (request, reply) => {
         try {
-            const result = await server.handover.listDeliveryToDPK(server);
+
+            const { startDate, endDate } = request.query;
+            const result = await server.handover.listDeliveryToDPK(server, startDate, endDate);
             reply.send({ message: 'fetch successfully', data: result });
         } catch (error) {
             request.log.error(error);

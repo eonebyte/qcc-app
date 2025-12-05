@@ -1,13 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Button, Input, Space, Table, Modal, message } from "antd";
+import { Button, Input, Space, Table, Modal, message, DatePicker } from "antd";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
-import { SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined, SyncOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
+const { RangePicker } = DatePicker;
+
 export default function DeliveryToDPK() {
+
     const [tableData, setTableData] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -16,6 +19,7 @@ export default function DeliveryToDPK() {
         pageSize: 10
     });
 
+    const [dateRange, setDateRange] = useState([null, null]);
 
     // selected rows
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
@@ -28,6 +32,14 @@ export default function DeliveryToDPK() {
     const [searchText, setSearchText] = useState("");
     const [searchedColumn, setSearchedColumn] = useState("");
     const searchInput = useRef(null);
+
+    const handleRefresh = () => {
+        setDateRange([null, null]);  // reset filter tanggal
+        fetchData([null, null]);     // fetch tanpa filter
+        message.success("Data refreshed");
+    };
+
+
 
     const handleSearch = (selectedKeys, confirm, dataIndex) => {
         confirm();
@@ -150,11 +162,19 @@ export default function DeliveryToDPK() {
     ];
 
     // ================== FETCH DATA API ==================
-    const fetchData = async () => {
+    const fetchData = async (dateRangeParam = dateRange) => {
         setLoading(true);
+
+        const startDate = dateRangeParam?.[0]
+            ? dateRangeParam[0].format("YYYY-MM-DD")
+            : "";
+        const endDate = dateRangeParam?.[1]
+            ? dateRangeParam[1].format("YYYY-MM-DD")
+            : "";
         try {
             const resp = await fetch(
-                `${backEndUrl}/handover/list/delivery/to/dpk`
+                `${backEndUrl}/handover/list/delivery/to/dpk?startDate=${startDate}&endDate=${endDate}`,
+                { credentials: "include" }
             );
             const json = await resp.json();
 
@@ -238,6 +258,32 @@ export default function DeliveryToDPK() {
 
     return (
         <LayoutGlobal>
+            <div
+                style={{
+                    marginBottom: 10,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 12
+                }}
+            >
+                <Space wrap>
+                    <RangePicker
+                        style={{ marginLeft: 5, marginTop: 5, marginBottom: 0 }}
+                        format="YYYY-MM-DD"
+                        value={dateRange}
+                        onChange={(dates) => {
+                            setDateRange(dates); // hanya simpan, jangan fetch
+                        }}
+                    />
+                    <Button icon={<SearchOutlined />} style={{ marginTop: 5 }} type="primary" onClick={() => fetchData(dateRange)}>
+                    </Button>
+                    {/* Refresh Button */}
+                    <Button style={{ marginLeft: 5, marginTop: 5, marginBottom: 0 }} icon={<SyncOutlined />} onClick={handleRefresh}></Button>
+                </Space>
+            </div>
+
             <Table
                 rowSelection={rowSelection}
                 columns={columns}

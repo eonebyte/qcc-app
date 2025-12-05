@@ -29,7 +29,7 @@ const MKTFromDelivery = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${backEndUrl}/receipt/list/mkt/from/delivery`);
+            const res = await axios.get(`${backEndUrl}/receipt/list/mkt/from/delivery`, { withCredentials: true });
             if (res.data.data && res.data.data.success) {
                 const rawBundles = res.data.data.data || [];
 

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Tabs, Card, notification, Tag, Modal, Spin } from "antd";
-import { AndroidOutlined, AppleOutlined, PrinterOutlined } from "@ant-design/icons";
+import { Table, Button, Tabs, Card, notification, Tag, Modal, Spin, message } from "antd";
+import { AndroidOutlined, AppleOutlined, DownloadOutlined, PrinterOutlined, SearchOutlined, SyncOutlined } from "@ant-design/icons";
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
+import * as XLSX from "xlsx";
 pdfMake.vfs = pdfFonts.vfs;
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
@@ -12,6 +13,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
+const backEndUrlPdf = import.meta.env.VITE_BACKEND_URL_ATTACHMENT || 'http://localhost:3200';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -28,10 +30,33 @@ const HistoryBundleReceipt = () => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
 
+    const [sjData, setSjData] = useState({});
+
+
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [pdfBlobUrl, setPdfBlobUrl] = useState(null); // URL untuk iframe
     const [processingPdf, setProcessingPdf] = useState(false); // Loading saat edit PDF
+
+    const [bundleSearch, setBundleSearch] = useState("");
+
+
+    const handleSearchBundle = () => {
+        if (!bundleSearch.trim()) {
+            message.warning("Masukkan Bundle No untuk filter");
+            return;
+        }
+
+        loadData(bundleSearch); // ⬅ langsung ke server
+    };
+
+
+    const handleResetFilter = () => {
+        setBundleSearch("");
+        loadData(""); // tanpa parameter → fetch semua data
+    };
+
+
 
     useEffect(() => {
         loadData();
@@ -64,31 +89,58 @@ const HistoryBundleReceipt = () => {
     }
 
 
-    const loadData = async () => {
-        try {
-            setLoading(true)
-            const res = await fetch(`${backEndUrl}/tms/listbundle?checkpoint=${cPoint}&checkpoint_second=${cPointSecond}`);
-            const json = await res.json();
+    const loadSJ = async (bundleId) => {
+        if (sjData[bundleId]) return sjData[bundleId]; // sudah ada, return dari state
 
+        const res = await fetch(`${backEndUrl}/tms/listbundle/${bundleId}/sj`, {
+            credentials: "include"
+        });
+
+        const json = await res.json();
+
+        setSjData(prev => ({
+            ...prev,
+            [bundleId]: json.data
+        }));
+
+        return json.data; // <-- kunci supaya Promise.all punya hasil
+    };
+
+
+
+
+    const loadData = async (bundle = "") => {
+        try {
+            setLoading(true);
+
+            const url = new URL(`${backEndUrl}/tms/listbundle`);
+            url.searchParams.set("checkpoint", cPoint);
+            if (cPointSecond) url.searchParams.set("checkpoint_second", cPointSecond);
+            if (bundle) url.searchParams.set("bundle_no", bundle);
+
+            const res = await fetch(url, { credentials: "include" });
+            const json = await res.json();
 
             const mapped = json.data.map(item => ({
                 key: item.adw_handover_group_id,
                 documentno: item.documentno,
                 created: item.created,
-                createdby: item.createdby,
                 received: item.received,
-                receivedby: item.receivedby,
                 total_shipments: item.total_shipments,
                 attachment: item.attachment
             }));
+
+            console.log('mapped : ', mapped);
+
 
             setData(mapped);
         } catch (err) {
             console.error("Error fetching:", err);
         } finally {
-            setLoading(false)
+            setLoading(false);
         }
     };
+
 
     const handlePrint = async (record) => {
         // 1. Validasi
@@ -111,7 +163,7 @@ const HistoryBundleReceipt = () => {
 
             // 2. Fetch File Statis dari Backend
             // Pastikan URL path statisnya benar sesuai config fastify static Anda
-            const staticUrl = `https://api-node.adyawinsa.com:3200/files/handover/${record.attachment}`;
+            const staticUrl = `${backEndUrlPdf}/files/handover/${record.attachment}`;
 
             const response = await fetch(staticUrl);
             if (!response.ok) throw new Error("Gagal mengunduh file PDF asli");
@@ -130,9 +182,11 @@ const HistoryBundleReceipt = () => {
 
             const printDate = dayjs().tz("Asia/Jakarta").format("DD/MM/YYYY HH:mm") + " WIB";
 
+            const { height } = firstPage.getSize(); // misal 842
+
             firstPage.drawText(`Print Date: ${printDate}`, {
                 x: 40,
-                y: 15, // Posisi dari bawah kertas
+                y: height - 15,
                 size: 8,
                 font: helveticaFont,
                 color: rgb(0, 0, 0),
@@ -168,6 +222,78 @@ const HistoryBundleReceipt = () => {
             setPdfBlobUrl(null);
         }
     };
+
+    const loadAllSJBeforeExport = async () => {
+        const promises = data.map(bundle => loadSJ(bundle.key));
+        const datas = await Promise.all(promises); // pastikan semua selesai
+
+        console.log('data ss : ', datas);
+    };
+
+
+
+    const exportExcel = async () => {
+        const loadingMsg = message.loading("Mengambil data untuk export...", 0);
+        console.log('data : ', data);
+
+        try {
+            // 1. Pastikan semua SJ ter-load dulu dari server
+            await loadAllSJBeforeExport();
+
+            if (!data || data.length === 0) {
+                loadingMsg();
+                message.warning("Tidak ada data untuk diexport");
+                return;
+            }
+
+            let excelData = [];
+
+            // 2. Loop setiap Bundle
+            data.forEach(bundle => {
+                const sjs = sjData[bundle.key] || [];
+
+                if (sjs.length > 0) {
+                    sjs.forEach((sj, index) => {
+                        excelData.push({
+                            "NO BUNDLE": index === 0 ? bundle.documentno : "",
+                            "NO SJ": sj.documentno
+                        });
+                    });
+                } else {
+                    excelData.push({
+                        "NO BUNDLE": bundle.documentno,
+                        "NO SJ": ""
+                    });
+                }
+            });
+
+
+            loadingMsg(); // Hapus loading
+
+            // 3. Buat Worksheet
+            const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+            // Opsional: Atur lebar kolom biar rapi saat dibuka
+            worksheet['!cols'] = [
+                { wch: 25 }, // Lebar kolom NO BUNDLE
+                { wch: 20 }  // Lebar kolom NO SJ
+            ];
+
+            // 4. Download File
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Data Bundle SJ");
+
+            const filename = `Bundle_SJ_Export_${dayjs().format("YYYYMMDD_HHmmss")}.xlsx`;
+            XLSX.writeFile(workbook, filename);
+
+        } catch (error) {
+            loadingMsg();
+            console.error("Export Error:", error);
+            message.error("Gagal melakukan export excel");
+        }
+    };
+
+
 
     const columns = [
         {
@@ -242,13 +368,75 @@ const HistoryBundleReceipt = () => {
         }
     ];
 
+    const expandedRow = (record) => {
+        const rows = sjData[record.key];
+
+        if (!rows) {
+            return <div style={{ padding: 20 }}>Loading SJ...</div>;
+        }
+
+        return (
+            <div style={{ padding: "5px 25px" }}>
+                <Table
+                    columns={[
+                        { title: "SJ No", dataIndex: "documentno" },
+                        { title: "Driver", dataIndex: "drivername" },
+                    ]}
+                    dataSource={rows.map(r => ({ ...r, key: r.adw_trackingsj_id }))}
+                    pagination={false}
+                    size="small"
+                    bordered  // <-- Kelihatan lebih rapi
+                    style={{ margin: 0 }}
+                    scroll={{ x: "max-content" }}
+                />
+            </div>
+        );
+
+    };
+
+
     return (
         <>
+            <div style={{ marginBottom: 10, marginLeft: 10, display: "flex", gap: 10 }}>
+                {/* Input Filter Bundle */}
+                <input
+                    type="text"
+                    placeholder="Cari Bundle No..."
+                    value={bundleSearch}
+                    onChange={(e) => setBundleSearch(e.target.value)}
+                    style={{
+                        padding: "6px 10px",
+                        borderRadius: 6,
+                        border: "1px solid #ccc",
+                        width: 200
+                    }}
+                />
+
+                {/* Tombol Search */}
+                <Button icon={<SearchOutlined />} type="primary" onClick={handleSearchBundle}>
+                </Button>
+
+
+                <Button icon={<SyncOutlined />} type="default" onClick={handleResetFilter}>
+                </Button>
+
+                <Button icon={<DownloadOutlined />} type="default" onClick={exportExcel}>
+                </Button>
+
+
+            </div>
+
             <Table
                 loading={loading}
                 columns={columns}
                 dataSource={data}
                 pagination={{ pageSize: 10 }}
+                expandable={{
+                    expandedRowRender: (record) => expandedRow(record),
+                    onExpand: (expanded, record) => {
+                        if (expanded) loadSJ(record.key);
+                    },
+                }}
             />
             <Modal
                 styles={{ content: { padding: 10 } }}

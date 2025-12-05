@@ -22,8 +22,20 @@ class Receipt {
     formatDate(iso) {
         if (!iso) return "-";
         // convert ke WIB dan format YYYY-MM-DD
-        return dayjs(iso).tz("Asia/Jakarta").format("YYYY-MM-DD");
+        return dayjs(iso).utc().tz("Asia/Jakarta").format("YYYY-MM-DD");
     };
+
+    formatTime(iso) {
+        if (!iso) return "-";
+        return dayjs(iso).utc().tz("Asia/Jakarta").format("HH:mm") + " WIB";
+    }
+
+    add7Hours(iso) {
+        if (!iso) return null;
+        return dayjs(iso).add(7, "hour");
+    }
+
+
 
     async generateHandoverPdf(payload, from_act, to_act) {
         const {
@@ -32,6 +44,9 @@ class Receipt {
             bundleNo,
             dateHandover
         } = payload;
+
+
+
 
         const uploadDir = path.join(process.cwd(), "uploads/handover");
         if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -51,9 +66,9 @@ class Receipt {
         // ========================================
         // HEADER
         // ========================================
-        doc.font('Helvetica-Bold').fontSize(16).text(`LIST HANDOVER (${from_act} to ${to_act})`, { align: "center" });
+        doc.font('Helvetica-Bold').fontSize(12).text(`LIST HANDOVER (${from_act} to ${to_act})`, { align: "center" });
         doc.moveDown(0.2);
-        doc.font('Helvetica').fontSize(12).text(`No: ${bundleNo}`, { align: "center" });
+        doc.font('Helvetica').fontSize(10).text(`No: ${bundleNo}`, { align: "center" });
         doc.moveDown(2); // Jarak ke tabel
 
         // ========================================
@@ -68,7 +83,7 @@ class Receipt {
         // Simpan posisi Y header agar sejajar
         const headerY = doc.y;
 
-        doc.font('Helvetica-Bold').fontSize(11);
+        doc.font('Helvetica-Bold').fontSize(10);
         doc.text("No", colNo, headerY);
         doc.text("Customer", colCust, headerY);
         doc.text("Shipment No", colShip, headerY);
@@ -84,7 +99,7 @@ class Receipt {
         // ========================================
         // TABLE DATA
         // ========================================
-        doc.font('Helvetica').fontSize(11); // Reset font normal
+        doc.font('Helvetica').fontSize(10); // Reset font normal
 
         listShipment.forEach((ship, idx) => {
             const moveDate = dayjs(ship.movementdate).tz("Asia/Jakarta").format("YYYY-MM-DD");
@@ -118,11 +133,12 @@ class Receipt {
         const rightX = 380;
         const boxWidth = 160;
 
-        const createdHour = dayjs(dateHandover.createdBundle).format("HH:mm") + " WIB";
-        const receivedHour = dayjs(dateHandover.receivedBundle).format("HH:mm") + " WIB";
+        const createdHour = this.formatTime(this.add7Hours(dateHandover.createdBundle));
+        const receivedHour = this.formatTime(this.add7Hours(dateHandover.receivedBundle));
+
 
         // 1. JUDUL (Delivery / DPK)
-        doc.font('Helvetica-Bold').fontSize(12);
+        doc.font('Helvetica-Bold').fontSize(11);
 
         // Cetak judul
         doc.text(from_act, leftX, sigStartY, { align: "center", width: boxWidth });
@@ -142,13 +158,14 @@ class Receipt {
         doc.moveTo(rightX, lineY).lineTo(rightX + boxWidth, lineY).lineWidth(1).stroke();
 
         // 4. NAMA USER
-        doc.font('Helvetica').fontSize(11);
+        doc.font('Helvetica').fontSize(10);
         doc.text(dataUser.createdby_name, leftX, lineY + 5, { width: boxWidth, align: "center" });
         doc.text(dataUser.receivedby_name, rightX, lineY + 5, { width: boxWidth, align: "center" });
 
         // 5. WAKTU (Jam) - Jika ingin warna merah seperti contoh, gunakan fillColor('red')
         // Jika ingin hitam/abu standar hapus .fillColor('red')
         // doc.fontSize(10).fillColor('red');
+        doc.fontSize(8);
         doc.text(createdHour, leftX, lineY + 20, { width: boxWidth, align: "center" });
         doc.text(receivedHour, rightX, lineY + 20, { width: boxWidth, align: "center" });
 
@@ -223,9 +240,6 @@ class Receipt {
             const oracleMap = new Map(
                 oracleRows.rows.map(row => [String(row.M_INOUT_ID), row])
             );
-
-            // Generate PDF
-
 
             // ---------------------------------------------------------
             // 3️⃣ Gabungkan PostgreSQL + Oracle
@@ -665,7 +679,7 @@ class Receipt {
             const queryPostgres = `
                 SELECT 
                     t.m_inout_id,
-                    t.driverby,
+                    t.drivername,
                     t.adw_trackingsj_id,
                     t.checkpoin_id,
                     gs.adw_handover_group_id
@@ -724,7 +738,7 @@ class Receipt {
 
                 return {
                     ...pg,
-                    driverby: Number(pg.driverby),
+                    drivername: pg.drivername,
                     documentno: o ? o.DOCUMENTNO : 'N/A',
                     customer: o ? o.CUSTOMER : 'N/A',
                     plantime: o ? o.PLANTIME : null,
@@ -746,7 +760,8 @@ class Receipt {
                 SELECT 
                     adw_handover_group_id,
                     documentno,
-                    created
+                    created,
+                    drivername
                 FROM adw_handover_group
                 WHERE adw_handover_group_id = ANY($1::int[])
                 `;
@@ -755,7 +770,8 @@ class Receipt {
                 groupRows.rows.forEach(row => {
                     groupDataMap.set(row.adw_handover_group_id, {
                         bundleNo: row.documentno,
-                        created: row.created
+                        created: row.created,
+                        drivername: row.drivername
                     });
                 });
             }
@@ -774,6 +790,7 @@ class Receipt {
                     grouped[gid] = {
                         bundleNo: info?.bundleNo || 'N/A',
                         created: info?.created || null,
+                        drivername: info?.drivername || null,
                         shipments: []
                     };
                 }
@@ -800,7 +817,7 @@ class Receipt {
         }
     }
 
-    async processDriverFromDPK(server, bundles, userId) {
+    async processDriverFromDPK(server, bundles, userName) {
         let dbClient;
 
 
@@ -847,13 +864,11 @@ class Receipt {
                     const updateTrackingQuery = `
                         UPDATE adw_trackingsj
                         SET updated = NOW(),
-                            updatedby = $1,
-                            checkpoin_id = $2
-                        WHERE adw_trackingsj_id = $3
+                            checkpoin_id = $1
+                        WHERE adw_trackingsj_id = $2
                         RETURNING adw_trackingsj_id, m_inout_id
                     `;
                     const updated = await dbClient.query(updateTrackingQuery, [
-                        userId,
                         '5',
                         adw_trackingsj_id
                     ]);
@@ -863,21 +878,21 @@ class Receipt {
                     // INSERT EVENT
                     const insertEventQuery = `
                         INSERT INTO adw_trackingsj_events(
-                            ad_client_id, ad_org_id, ad_user_id,
+                            ad_client_id, ad_org_id, username,
                             adw_event_type, adw_from_actor, adw_to_actor,
                             adw_trackingsj_id,
-                            created, createdby, isactive,
-                            updated, updatedby, checkpoin_id
+                            created, isactive,
+                            updated, checkpoin_id
                         ) VALUES(
                             1000003, 1000003, $1,
                             'ACCEPTANCE',
                             'DPK', 'Driver',
                             $2,
-                            NOW(), $1, 'Y',
-                            NOW(), $1, $3
+                            NOW(), 'Y',
+                            NOW(), $3
                         )
                     `;
-                    await dbClient.query(insertEventQuery, [userId, adw_trackingsj_id, '5']);
+                    await dbClient.query(insertEventQuery, [userName, adw_trackingsj_id, '5']);
                 }
 
                 // UPDATE HANDOVER GROUP
@@ -885,14 +900,13 @@ class Receipt {
                     UPDATE adw_handover_group
                     SET 
                         received = NOW(),
-                        receivedby = $1,
-                        updated = NOW(),
-                        updatedby = $1
+                        receivedbyname = $1,
+                        updated = NOW()
                     WHERE documentno = $2
                 `;
 
                 const updateResult = await dbClient.query(updateHandoverGroupQuery, [
-                    userId,
+                    userName,
                     bundle.bundleNo
                 ]);
 
@@ -925,12 +939,10 @@ class Receipt {
                     UPDATE adw_handover_group
                     SET 
                         updated = NOW(),
-                        updatedby = $1,
-                        attachment = $2
-                    WHERE documentno = $3
+                        attachment = $1
+                    WHERE documentno = $2
                 `;
                     await dbClient.query(updateHandoverGroupAttachment, [
-                        userId,
                         fileName,
                         bundle.bundleNo
                     ]);
@@ -1050,10 +1062,12 @@ class Receipt {
             if (groupIds.length > 0) {
                 const groupQuery = `
                 SELECT 
-                    adw_handover_group_id,
-                    documentno,
-                    created
-                FROM adw_handover_group
+                    ahg.adw_handover_group_id,
+                    ahg.documentno,
+                    ahg.created,
+                    au.name driver
+                FROM adw_handover_group ahg
+                LEFT JOIN ad_user au on ahg.driverby = au.ad_user_id
                 WHERE adw_handover_group_id = ANY($1::int[])
                 `;
 
@@ -1061,7 +1075,8 @@ class Receipt {
                 groupRows.rows.forEach(row => {
                     groupDataMap.set(row.adw_handover_group_id, {
                         bundleNo: row.documentno,
-                        created: row.created
+                        created: row.created,
+                        driver: row.driver
                     });
                 });
             }
@@ -1080,6 +1095,7 @@ class Receipt {
                     grouped[gid] = {
                         bundleNo: info?.bundleNo || 'N/A',
                         created: info?.created || null,
+                        driver: info?.driver || null,
                         shipments: []
                     };
                 }
@@ -1787,7 +1803,7 @@ class Receipt {
                         ) VALUES(
                             1000003, 1000003, $1,
                             'ACCEPTANCE',
-                            'Delivery', 'MKT',
+                            'Delivery', 'Marketing',
                             $2,
                             NOW(), $1, 'Y',
                             NOW(), $1, $3
@@ -2091,7 +2107,7 @@ class Receipt {
                         ) VALUES(
                             1000003, 1000003, $1,
                             'ACCEPTANCE',
-                            'MKT', 'FAT',
+                            'Marketing', 'FAT',
                             $2,
                             NOW(), $1, 'Y',
                             NOW(), $1, $3

@@ -11,18 +11,29 @@ import multipart from "@fastify/multipart";
 
 dotenv.config()
 
+const ISPROD = process.env.ISPROD;
 const DB_USER_POSTGRES = process.env.DB_USER_POSTGRES;
 const DB_PASSWORD_POSTGRES = process.env.DB_PASSWORD_POSTGRES;
 const DB_NAME_POSTGRES = process.env.DB_NAME_POSTGRES;
 const DB_HOST_POSTGRES = process.env.DB_HOST_POSTGRES;
+
+const originList = ISPROD == 'Y'
+    ? [
+        "https://api-node.adyawinsa.com/3200",
+        "https://erp.adyawinsa.com",
+        "https://app.adyawinsa.com"
+    ]
+    : [
+        "http://localhost:5173",
+        "http://local.adyawinsa.com"
+    ];
 
 export async function build(opts = {}) {
     const app = fastify(opts)
 
     await app.register(cors, {
         // origin: `${BASE_URL_CLIENT}:${BASE_PORT_CLIENT}`,
-        origin: "*",
-        // origin: "http://localhost:5173",  
+        origin: originList,
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     });

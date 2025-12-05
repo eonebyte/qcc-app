@@ -29,7 +29,7 @@ const DPKFromDriver = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${backEndUrl}/receipt/list/dpk/from/driver`);
+            const res = await axios.get(`${backEndUrl}/receipt/list/dpk/from/driver`, { withCredentials: true });
             if (res.data.data && res.data.data.success) {
                 const rawBundles = res.data.data.data || [];
 
@@ -180,6 +180,7 @@ const DPKFromDriver = () => {
         },
         { title: 'No', key: 'no', width: 70, align: 'center', render: (_, __, index) => ((pagination.current - 1) * pagination.pageSize) + index + 1 },
         { title: 'Bundle No', dataIndex: 'bundleNo', key: 'bundleNo' },
+        { title: 'Driver By', dataIndex: 'driver', key: 'driver' },
         { title: 'Created Date', dataIndex: 'created', key: 'created', render: (text) => DateTime.fromISO(text).toFormat('dd-MM-yyyy HH:mm:ss') },
         { title: 'Total Shipments', dataIndex: 'shipments', key: 'shipments_count', align: 'center', render: (shipments) => shipments.length }
     ];

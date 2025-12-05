@@ -155,7 +155,8 @@ export default function DeliveryToMKT() {
         setLoading(true);
         try {
             const resp = await fetch(
-                `${backEndUrl}/handover/list/delivery/to/mkt`
+                `${backEndUrl}/handover/list/delivery/to/mkt`,
+                { credentials: "include" }
             );
             const json = await resp.json();
 
@@ -167,6 +168,8 @@ export default function DeliveryToMKT() {
                 customer: row.customer,
                 plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
                 checkpoin_id: row.checkpoin_id,
+                driverby: row.driverby,
+                tnkb_id: row.tnkb_id
             }));
 
             setTableData(mapped);
@@ -202,7 +205,34 @@ export default function DeliveryToMKT() {
     // ================== SUBMIT TO BACKEND ==================
     const handleSubmit = async () => {
         try {
+            if (selectedRows.length === 0) {
+                message.error("Tidak ada data yang dipilih.");
+                return;
+            }
+
+            // Ambil nilai driverBy dan tnkbId dari row pertama
+            const firstDriver = selectedRows[0].driverby;
+            const firstTnkb = selectedRows[0].tnkb_id;
+
+            // Cek apakah semua row punya driverBy yang sama
+            const validDriver = selectedRows.every(row => row.driverby === firstDriver);
+
+            // Cek apakah semua row punya tnkbId yang sama
+            const validTnkb = selectedRows.every(row => row.tnkb_id === firstTnkb);
+
+            if (!validDriver) {
+                message.error("Semua data yang dipilih harus memiliki driverBy yang sama!");
+                return;
+            }
+
+            if (!validTnkb) {
+                message.error("Semua data yang dipilih harus memiliki tnkbId yang sama!");
+                return;
+            }
+
             const payload = {
+                driverId: Number(firstDriver),
+                tnkbId: Number(firstTnkb),
                 data: selectedRows,
             };
 

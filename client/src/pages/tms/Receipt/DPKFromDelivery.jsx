@@ -29,7 +29,7 @@ const DPKFromDelivery = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${backEndUrl}/receipt/list/dpk/from/delivery`);
+            const res = await axios.get(`${backEndUrl}/receipt/list/dpk/from/delivery`, { withCredentials: true });
             if (res.data.data && res.data.data.success) {
                 const rawBundles = res.data.data.data || [];
 
@@ -133,6 +133,8 @@ const DPKFromDelivery = () => {
         setItemToReject(shipment);
         setIsModalRejectOpen(true);
     };
+
+
 
     const handleRejectOk = async () => {
         console.log("Rejecting item:", itemToReject);

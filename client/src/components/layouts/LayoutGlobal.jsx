@@ -6,7 +6,7 @@ import FooterAdmin from "./FooterAdmin";
 import { useDispatch, useSelector } from "react-redux";
 import HeaderGlobal from "./HeaderGlobal";
 import { toggleDarkMode } from "../../states/reducers/themeSlice";
-import { AppstoreOutlined, DeliveredProcedureOutlined, DownOutlined, FieldTimeOutlined, FileExclamationOutlined, FolderAddOutlined, HistoryOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoonOutlined, SunOutlined, TruckFilled } from '@ant-design/icons';
+import { AppstoreOutlined, DeliveredProcedureOutlined, DownOutlined, FieldTimeOutlined, FileExclamationOutlined, FolderAddOutlined, HistoryOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoonOutlined, SettingOutlined, SunOutlined, TruckFilled } from '@ant-design/icons';
 import { logout } from '../../states/reducers/authSlice';
 const { Text } = Typography;
 const { Header, Footer, Sider, Content } = Layout;
@@ -16,13 +16,20 @@ const items = [
     {
         key: '/',
         label: 'Home',
-        icon: <AppstoreOutlined />
+        icon: <AppstoreOutlined />,
+        roles: []
+    },
+    {
+        key: "/setting/config",
+        label: "setting",
+        icon: <SettingOutlined />,
+        roles: ['admin',]
     },
     {
         key: "/outstanding",
         label: "Outstanding",
         icon: <FileExclamationOutlined />,
-        roles: ['admin', 'delivery', 'dpk', 'fat', 'marketing']
+        roles: ['delivery', 'dpk', 'fat', 'marketing']
     },
     {
         key: "/receipt",
@@ -60,7 +67,7 @@ const items = [
                 roles: ['fat']
             },
         ],
-        roles: ['admin', 'delivery', 'dpk', 'driver', 'fat', 'marketing']
+        roles: ['delivery', 'dpk', 'driver', 'fat', 'marketing']
     },
     {
         key: "/list/handover",
@@ -94,11 +101,11 @@ const items = [
             },
             {
                 key: '/handover/mkt/to/fat',
-                label: 'to Fat',
+                label: 'to FAT',
                 roles: ['marketing']
             },
         ],
-        roles: ['admin', 'delivery', 'dpk', 'driver', 'marketing']
+        roles: ['delivery', 'dpk', 'driver', 'marketing']
     },
     {
         key: "/history",
@@ -110,7 +117,7 @@ const items = [
         key: "/progress-shipment",
         label: "Progress Shipment",
         icon: <FieldTimeOutlined />,
-        roles: ['admin', 'delivery', 'dpk', 'fat', 'marketing']
+        roles: ['delivery', 'dpk', 'fat', 'marketing', 'driver']
     },
     {
         key: "5",

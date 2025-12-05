@@ -29,7 +29,7 @@ const FATFromMKT = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${backEndUrl}/receipt/list/fat/from/mkt`);
+            const res = await axios.get(`${backEndUrl}/receipt/list/fat/from/mkt`, { withCredentials: true });
             if (res.data.data && res.data.data.success) {
                 const rawBundles = res.data.data.data || [];
 

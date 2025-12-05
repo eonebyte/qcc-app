@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Steps, Typography, Spin, Modal, Button, Timeline, Input, Space } from 'antd';
+import { DatePicker, Table, Steps, Typography, Spin, Modal, Button, Timeline, Input, Space, message } from 'antd';
 import {
     HourglassOutlined,
     FileTextOutlined,
@@ -7,12 +7,21 @@ import {
     AuditOutlined,
     CheckCircleOutlined,
     ClockCircleOutlined,
-    SearchOutlined
+    SearchOutlined,
+    TeamOutlined,
+    DownloadOutlined,
 } from '@ant-design/icons';
 import './ProgressShipment.css';
 import LayoutGlobal from '../../components/layouts/LayoutGlobal';
 import { useRef } from 'react';
 import Highlighter from 'react-highlight-words';
+import dayjs from "dayjs";
+
+import { utils, writeFileXLSX } from "xlsx";
+
+
+const { RangePicker } = DatePicker;
+
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
 
@@ -54,12 +63,14 @@ const formatTime = (isoString) => {
 };
 
 const stepDefinitions = [
-    { title: 'Delivery', icon: <HourglassOutlined />, handoverKey: 'ho_delivery_to_dpk', handoverByKey: 'ho_delivery_to_dpkby_name', acceptKey: 'accept_dpk_from_delivery', acceptByKey: 'accept_dpk_from_deliveryby_name', preHandoverText: 'Handover ke DPK', postHandoverText: 'Menunggu Accept DPK' },
-    { title: 'DPK', icon: <FileTextOutlined />, handoverKey: 'ho_dpk_to_driver', handoverByKey: 'ho_dpk_to_driverby_name', acceptKey: 'accept_driver_from_dpk', acceptByKey: 'accept_driver_from_dpkby_name', preHandoverText: 'Handover ke Driver', postHandoverText: 'Menunggu Accept Driver' },
-    { title: 'Driver', icon: <CarOutlined />, handoverKey: 'ho_driver_to_dpk', handoverByKey: 'ho_driver_to_dpkby_name', acceptKey: 'accept_dpk_from_driver', acceptByKey: 'accept_dpk_from_driverby_name', preHandoverText: 'Handover ke DPK', postHandoverText: 'Menunggu Accept DPK' },
-    { title: 'DPK', icon: <FileTextOutlined />, handoverKey: 'ho_dpk_to_delivery', handoverByKey: 'ho_dpk_to_deliveryby_name', acceptKey: 'accept_delivery_from_dpk', acceptByKey: 'accept_delivery_from_dpkby_name', preHandoverText: 'Handover ke Delivery', postHandoverText: 'Menunggu Accept Delivery' },
-    { title: 'Delivery', icon: <HourglassOutlined />, handoverKey: 'ho_delivery_to_mkt', handoverByKey: 'ho_delivery_to_mktby_name', acceptKey: 'accept_mkt_from_delivery', acceptByKey: 'accept_mkt_from_deliveryby_name', preHandoverText: 'Handover ke Marketing', postHandoverText: 'Menunggu Accept Marketing' },
-    { title: 'Marketing', icon: <AuditOutlined />, handoverKey: 'ho_mkt_to_fat', handoverByKey: 'ho_mkt_to_fatby_name', acceptKey: 'accept_fat_from_mkt', acceptByKey: 'accept_fat_from_mktby_name', preHandoverText: 'Handover ke FAT', postHandoverText: 'Menunggu Accept FAT' },
+    { title: 'Delivery', icon: <HourglassOutlined style={{ fontSize: 10 }} />, handoverKey: 'ho_delivery_to_dpk', handoverByKey: 'ho_delivery_to_dpkby_name', acceptKey: 'accept_dpk_from_delivery', acceptByKey: 'accept_dpk_from_deliveryby_name', preHandoverText: 'HO ke DPK', postHandoverText: 'Wait Accept DPK' },
+    { title: 'DPK', icon: <FileTextOutlined />, handoverKey: 'ho_dpk_to_driver', handoverByKey: 'ho_dpk_to_driverby_name', acceptKey: 'accept_driver_from_dpk', acceptByKey: 'accept_driver_from_dpkby_name', preHandoverText: 'Handover ke Driver', postHandoverText: 'Wait Accept Driver' },
+    // { title: 'Driver', icon: <CarOutlined />, handoverKey: 'ho_driver_to_dpk', handoverByKey: 'ho_driver_to_dpkby_name', acceptKey: 'accept_dpk_from_driver', acceptByKey: 'accept_dpk_from_driverby_name', preHandoverText: 'Check In to Customer', postHandoverText: 'Wait Accept DPK' },
+    { title: 'Driver', icon: <CarOutlined />, handoverKey: 'ho_driver_to_customer', handoverByKey: 'ho_driver_to_customerby_name', acceptKey: 'accept_customer_from_driver', acceptByKey: 'accept_customer_from_driverby_name', preHandoverText: 'Check In to Customer', postHandoverText: 'Wait Diambil' },
+    { title: 'Customer', icon: <TeamOutlined />, handoverKey: 'ho_driver_to_dpk', handoverByKey: 'ho_driver_to_dpkby_name', acceptKey: 'accept_dpk_from_driver', acceptByKey: 'accept_dpk_from_driverby_name', preHandoverText: 'On Customer', postHandoverText: 'Wait Accept DPK' },
+    { title: 'DPK', icon: <FileTextOutlined />, handoverKey: 'ho_dpk_to_delivery', handoverByKey: 'ho_dpk_to_deliveryby_name', acceptKey: 'accept_delivery_from_dpk', acceptByKey: 'accept_delivery_from_dpkby_name', preHandoverText: 'Handover ke Delivery', postHandoverText: 'Wait Accept Delivery' },
+    { title: 'Delivery', icon: <HourglassOutlined />, handoverKey: 'ho_delivery_to_mkt', handoverByKey: 'ho_delivery_to_mktby_name', acceptKey: 'accept_mkt_from_delivery', acceptByKey: 'accept_mkt_from_deliveryby_name', preHandoverText: 'Handover ke Marketing', postHandoverText: 'Wait Accept Marketing' },
+    { title: 'Marketing', icon: <AuditOutlined />, handoverKey: 'ho_mkt_to_fat', handoverByKey: 'ho_mkt_to_fatby_name', acceptKey: 'accept_fat_from_mkt', acceptByKey: 'accept_fat_from_mktby_name', preHandoverText: 'Handover ke FAT', postHandoverText: 'Wait Accept FAT' },
     { title: 'FAT', icon: <CheckCircleOutlined />, isFinal: true, acceptKey: 'accept_fat_from_mkt', acceptByKey: 'accept_fat_from_mktby_name' }
 ];
 
@@ -69,9 +80,10 @@ const ProgressShipment = () => {
     // State
     const [shipmentData, setShipmentData] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [exportLoading, setExportLoading] = useState(false);
     const [pagination, setPagination] = useState({
         current: 1,
-        pageSize: 20,
+        pageSize: 5,
         total: 0
     });
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -79,6 +91,9 @@ const ProgressShipment = () => {
     const [searchText, setSearchText] = useState('');
     const [searchedColumn, setSearchedColumn] = useState('');
     const searchInput = useRef(null);
+
+    const [dateRange, setDateRange] = useState([null, null]);
+
 
     const showTimelineModal = (record) => {
         setTimelineData({ docNo: record.docNo, flow: record.flow });
@@ -100,6 +115,7 @@ const ProgressShipment = () => {
             const id = item.m_inout_id || item.M_INOUT_ID || item.adw_trackingsj_id || item.id || (dataIndex + startIndex + 1);
             const documentno = item.documentno || item.documentno || item.documentno || item.docNo || '';
             const customer = item.customer;
+            const planTime = item.plantime;
 
             const flow = stepDefinitions.map((step, stepIndex) => {
                 const handoverTimestamp = item[step.handoverKey];
@@ -107,7 +123,7 @@ const ProgressShipment = () => {
                 const prevStep = stepIndex > 0 ? stepDefinitions[stepIndex - 1] : null;
                 const isPrevStepAccepted = prevStep ? !!item[prevStep.acceptKey] : true;
 
-                let status = 'pending', displayValue = 'Menunggu', displayTime = '-';
+                let status = 'pending', displayValue = 'Wait', displayTime = '-';
 
                 if (acceptTimestamp) {
                     status = 'completed';
@@ -137,6 +153,18 @@ const ProgressShipment = () => {
                     acceptBy: item[step.acceptByKey]
                 };
 
+                // =========================================
+                // Custom text untuk Check In ke Customer
+                // =========================================
+                if (step.title === 'Driver' && status === 'in_progress') {
+                    if (!item.adw_tms_id) {
+                        displayValue = 'Process Cek Security';
+                    } else {
+                        displayValue = 'Check In to Customer';
+                    }
+                }
+
+
                 return {
                     title: step.title,
                     status,
@@ -153,19 +181,29 @@ const ProgressShipment = () => {
                 no: startIndex + dataIndex + 1,
                 docNo: documentno,
                 customer: customer,
+                planTime: planTime,
                 flow
             };
         });
     };
 
-    const fetchData = async (params = {}) => {
+    const fetchData = async (current = 1, pageSize = 10, dateRangeParam = dateRange) => {
         setLoading(true);
-        try {
-            const { current, pageSize } = params.pagination || pagination;
 
-            const response = await fetch(`${backEndUrl}/tms/history?page=${current}&limit=${pageSize}`);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const result = await response.json();
+        const startDate = dateRangeParam?.[0]
+            ? dateRangeParam[0].format("YYYY-MM-DD")
+            : "";
+        const endDate = dateRangeParam?.[1]
+            ? dateRangeParam[1].format("YYYY-MM-DD")
+            : "";
+        try {
+
+            const res = await fetch(
+                `${backEndUrl}/tms/history?page=${current}&limit=${pageSize}&startDate=${startDate}&endDate=${endDate}`,
+                { credentials: "include", }
+            );
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            const result = await res.json();
 
             console.log('Raw API response:', result);
 
@@ -218,13 +256,93 @@ const ProgressShipment = () => {
         }
     };
 
-    const handleTableChange = (pag, filters, sorter) => {
-        fetchData({ pagination: pag, filters, sorter });
+    // --- HANDLE EXPORT EXCEL ---
+    const handleExportExcel = async () => {
+        setExportLoading(true);
+        try {
+            const startDate = dateRange?.[0] ? dateRange[0].format("YYYY-MM-DD") : "";
+            const endDate = dateRange?.[1] ? dateRange[1].format("YYYY-MM-DD") : "";
+
+            // 1. Fetch data dengan limit besar (misal 10000) untuk export report
+            const res = await fetch(
+                `${backEndUrl}/tms/history?page=1&limit=10000&startDate=${startDate}&endDate=${endDate}`,
+                { credentials: "include", }
+            );
+            if (!res.ok) throw new Error("Gagal mengambil data untuk export");
+            const result = await res.json();
+
+            let rawData = [];
+            const candidates = [result?.data?.data, result?.data, result?.items, result?.result, result];
+            for (const c of candidates) {
+                if (Array.isArray(c)) { rawData = c; break; }
+            }
+
+            if (rawData.length === 0) {
+                message.warning("Tidak ada data untuk diexport pada periode ini.");
+                setExportLoading(false);
+                return;
+            }
+
+            // 2. Formatting Data untuk Excel (Flattening Object)
+            const excelData = rawData.map((item, index) => {
+                const row = {
+                    "No": index + 1,
+                    "Customer": item.customer || '-',
+                    "No. Doc": item.documentno || item.docNo || '-',
+                    "Tanggal Plan": item.plantime ? formatDateTime(item.plantime) : '-',
+                };
+
+                // Generate kolom dinamis berdasarkan step
+                stepDefinitions.forEach(step => {
+                    // Penamaan kolom agar unik, misal "Delivery Handover Time"
+                    const prefix = step.title;
+
+                    if (step.handoverKey) {
+                        row[`${prefix} Handover Date`] = item[step.handoverKey] ? formatDateTime(item[step.handoverKey]) : '-';
+                        row[`${prefix} Handover By`] = item[step.handoverByKey] || '-';
+                    }
+
+                    if (step.acceptKey) {
+                        row[`${prefix} Accept Date`] = item[step.acceptKey] ? formatDateTime(item[step.acceptKey]) : '-';
+                        row[`${prefix} Accept By`] = item[step.acceptByKey] || '-';
+                    }
+                });
+
+                return row;
+            });
+
+            // 3. Generate Worksheet & Workbook menggunakan SheetJS
+            const worksheet = utils.json_to_sheet(excelData);
+
+            // Auto width columns (opsional, biar rapi)
+            const wscols = Object.keys(excelData[0]).map(() => ({ wch: 20 }));
+            worksheet['!cols'] = wscols;
+
+            const workbook = utils.book_new();
+            utils.book_append_sheet(workbook, worksheet, "Shipment Report");
+
+            // 4. Download File
+            const fileName = `Report_Shipment_${startDate || 'All'}_to_${endDate || 'All'}.xlsx`;
+            writeFileXLSX(workbook, fileName);
+
+            message.success("Berhasil export data ke Excel");
+
+        } catch (error) {
+            console.error("Export Error:", error);
+            message.error("Gagal melakukan export excel");
+        } finally {
+            setExportLoading(false);
+        }
     };
+
+    const handleTableChange = (pag) => {
+        fetchData(pag.current, pag.pageSize);
+    };
+
 
     useEffect(() => {
         // initial load
-        fetchData({ pagination });
+        fetchData(1, pagination.pageSize);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -266,7 +384,16 @@ const ProgressShipment = () => {
     const columns = [
         { title: 'No', dataIndex: 'no', key: 'no' },
         { title: 'Customer', dataIndex: 'customer', key: 'customer', ...getColumnSearchProps('customer') },
-        { title: 'No. Dokumen', dataIndex: 'docNo', key: 'docNo', ...getColumnSearchProps('docNo') },
+        { title: 'No. Doc', dataIndex: 'docNo', key: 'docNo', ...getColumnSearchProps('docNo') },
+        {
+            title: 'Date',
+            dataIndex: 'planTime',
+            key: 'planTime',
+            ...getColumnSearchProps('planTime'),
+            render: (value) => value ? dayjs(value).format('YYYY-MM-DD') : '',
+            sorter: (a, b) => dayjs(a.planTime).unix() - dayjs(b.planTime).unix(),
+            sortDirections: ['ascend', 'descend'],
+        },
         {
             title: (<Steps initial={1} size='small' progressDot items={headerSteps} className="timeline-header-steps" />),
             dataIndex: 'flow',
@@ -301,7 +428,7 @@ const ProgressShipment = () => {
                                 onClick={() => showTimelineModal(record)}
                             >
                                 <Text strong className="step-value" style={{ color: valueColor }}>
-                                    {step.value || 'Menunggu'}
+                                    {step.value || 'Wait'}
                                 </Text>
                             </Button>
                         ),
@@ -315,7 +442,25 @@ const ProgressShipment = () => {
     return (
         <LayoutGlobal>
             <div style={{ padding: 10 }}>
-                <Title level={4}>Progress Pengiriman Dokumen</Title>
+                <Space style={{ marginBottom: 16 }}>
+                    <RangePicker
+                        format="YYYY-MM-DD"
+                        onChange={(dates) => {
+                            setDateRange(dates); // hanya simpan, jangan fetch
+                        }}
+                    />
+                    <Button icon={<SearchOutlined />} type="primary" onClick={() => fetchData(1, pagination.pageSize, dateRange)}>
+                    </Button>
+                    <Button
+                        icon={<DownloadOutlined />}
+                        onClick={handleExportExcel}
+                        loading={exportLoading}
+                        style={{ backgroundColor: '#217346', color: 'white', borderColor: '#217346' }}
+                    >
+                    </Button>
+                </Space>
+
+                {/* <Title level={4}>Progress Pengiriman Dokumen</Title> */}
                 <Table
                     className="surat-jalan-table"
                     columns={columns}
@@ -362,8 +507,8 @@ const ProgressShipment = () => {
                                                         {step.rawData.handoverBy && ` by ${step.rawData.handoverBy}`}
                                                     </span>
                                                 )}
-                                                {handoverTime && acceptTime && <span> - </span>}
-                                                {acceptTime && (
+                                                {(handoverTime && acceptTime && step.title !== "Driver") && <span> - </span>}
+                                                {(acceptTime && step.title !== "Driver") && (
                                                     <span>
                                                         <strong>Receipt:</strong> {acceptTime}
                                                         {step.rawData.acceptBy && ` by ${step.rawData.acceptBy}`}

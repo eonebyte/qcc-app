@@ -4,7 +4,9 @@ export default async (server, opts) => {
             const page = parseInt(request.query.page) || 1;
             const pageSize = parseInt(request.query.limit) || 10;
 
-            const to_dpk = await server.tms.getHistory(server, page, pageSize);
+            const { startDate, endDate } = request.query;
+
+            const to_dpk = await server.tms.getHistory2(server, page, pageSize, startDate, endDate);
             reply.send({ message: 'fetch successfully', data: to_dpk });
         } catch (error) {
             request.log.error(error);

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Button, Input, Space, Table, Modal, message, notification, Select } from "antd";
+import { Button, Input, Space, Table, Modal, message, notification, Select, Tag } from "antd";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
-import { SearchOutlined } from "@ant-design/icons";
+import { CheckOutlined, CloseOutlined, SearchOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
 import axios from "axios";
@@ -14,7 +14,7 @@ export default function DPKToDriver() {
 
     const [drivers, setDrivers] = useState([]);
     const [tnkbs, setTnkbs] = useState([]);
-    const [selectedDriverId, setSelectedDriverId] = useState(null);
+    const [selectedDriver, setSelectedDriver] = useState(null);
     const [selectedTnkbId, setSelectedTnkbId] = useState(null);
 
     const [pagination, setPagination] = useState({
@@ -22,10 +22,15 @@ export default function DPKToDriver() {
         pageSize: 10
     });
 
+    const [isModalConfirmOpen, setIsModalConfirmopen] = useState(false);
+    const [itemToConfirm, setItemToConfirm] = useState(null);
 
     // selected rows
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
     const [selectedRows, setSelectedRows] = useState([]);
+
+    const [isModalRejectCancelOpen, setIsModalRejectCancelopen] = useState(false);
+    const [itemToRejectCancel, setItemToRejectCancel] = useState(null);
 
     // modal
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -122,6 +127,16 @@ export default function DPKToDriver() {
             ),
     });
 
+    const showModalConfirm = (shipment) => {
+        setItemToConfirm(shipment);
+        setIsModalConfirmopen(true);
+    };
+
+    const showModalRejectCancel = (shipment) => {
+        setItemToRejectCancel(shipment);
+        setIsModalRejectCancelopen(true);
+    };
+
     // ================== TABLE COLUMNS ==================
     const columns = [
         {
@@ -153,6 +168,32 @@ export default function DPKToDriver() {
             ...getColumnSearchProps("plantime"),
             render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
         },
+        {
+            title: "Actions",
+            key: "actions",
+            width: 120,
+            render: (_, record) => {
+                console.log('tesss : ', record);
+                if (record.checkpoin_id == '5') {
+                    if (record.cancelrequest == 'Y') {
+                        return (<Space>
+                            <Button onClick={() => showModalConfirm(record)}
+                                icon={<CheckOutlined />} size='small' color="cyan" variant="outlined">Konfirm Cancel</Button>
+                            <Button onClick={() => showModalRejectCancel(record)}
+                                icon={<CloseOutlined />} size='small' danger>Reject</Button>
+                        </Space>)
+                    } else {
+                        return (<Tag color={"warning"} variant={'solid'}>
+                            Waiting
+                        </Tag>)
+                    }
+                } else {
+                    return '-'
+                }
+
+
+            }
+        }
     ];
 
     // ================== FETCH DATA API ==================
@@ -160,18 +201,21 @@ export default function DPKToDriver() {
         setLoading(true);
         try {
             const resp = await fetch(
-                `${backEndUrl}/handover/list/dpk/to/driver`
+                `${backEndUrl}/handover/list/dpk/to/driver`,
+                { credentials: "include" }
             );
             const json = await resp.json();
 
             const mapped = json.data.data.map((row, index) => ({
                 key: row.m_inout_id,
+                adw_trackingsj_id: row.adw_trackingsj_id,
                 m_inout_id: row.m_inout_id,
                 no: index + 1,
                 documentno: row.documentno,
                 customer: row.customer,
                 plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
                 checkpoin_id: row.checkpoin_id,
+                cancelrequest: row.cancelrequest
             }));
 
             setTableData(mapped);
@@ -185,8 +229,12 @@ export default function DPKToDriver() {
     const fetchDropdownData = async () => {
         try {
             const [driversRes, tnkbsRes] = await Promise.all([
-                axios.get(`${backEndUrl}/tms/drivers`),
-                axios.get(`${backEndUrl}/tms/tnkbs`)
+                axios.get(`${backEndUrl}/tms/drivers`, {
+                    withCredentials: true
+                }),
+                axios.get(`${backEndUrl}/tms/tnkbs`, {
+                    withCredentials: true
+                })
             ]);
             if (driversRes.data?.success) setDrivers(driversRes.data.data);
             if (tnkbsRes.data?.success) setTnkbs(tnkbsRes.data.data);
@@ -225,17 +273,21 @@ export default function DPKToDriver() {
 
     // ================== SUBMIT TO BACKEND ==================
     const handleSubmit = async () => {
-        if (!selectedDriverId || !selectedTnkbId) {
+        if (!selectedDriver || !selectedTnkbId) {
             notification.error({ message: 'Validasi Gagal', description: 'Silakan pilih Driver dan TNKB.' });
             return;
         }
 
+        console.log('sd : ', selectedDriver);
+
         try {
             const payload = {
                 data: selectedRows,
-                driverId: selectedDriverId,
+                driverId: selectedDriver.value,
+                driverName: selectedDriver.label,
                 tnkbId: selectedTnkbId,
             };
+
 
             console.log(JSON.stringify(payload));
 
@@ -267,6 +319,59 @@ export default function DPKToDriver() {
             message.error("Terjadi error saat submit.");
         }
     };
+
+    const handleConfirmOk = async () => {
+        console.log("confirm canceling item:", itemToConfirm);
+        try {
+
+            const res = await axios.post(`${backEndUrl}/tms/cancel`, itemToConfirm, { withCredentials: true });
+
+            if (res.data.success) {
+                notification.success({ message: 'Info', description: `Dokumen ${itemToConfirm.documentno} akan diproses untuk dicancel.` });
+                fetchData();
+            } else {
+                notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
+            }
+        } catch (error) {
+            console.error("Submit error:", error);
+            notification.error({ message: 'cancel Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
+        } finally {
+            setIsModalConfirmopen(false);
+            setItemToConfirm(null);
+        }
+    };
+
+    const handleConfirmClose = () => {
+        setIsModalConfirmopen(false);
+        setItemToConfirm(null);
+    };
+
+    const handleRejectCancelOk = async () => {
+        console.log("reject canceling item:", itemToRejectCancel);
+        try {
+
+            const res = await axios.post(`${backEndUrl}/tms/reject/req/cancel`, itemToRejectCancel, { withCredentials: true });
+
+            if (res.data.success) {
+                notification.success({ message: 'Info', description: `Dokumen ${itemToRejectCancel.documentno} akan diproses untuk dicancel.` });
+                fetchData();
+            } else {
+                notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
+            }
+        } catch (error) {
+            console.error("Submit error:", error);
+            notification.error({ message: 'cancel Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
+        } finally {
+            setIsModalRejectCancelopen(false);
+            setItemToRejectCancel(null);
+        }
+    };
+
+    const handleRejectCancelClose = () => {
+        setIsModalConfirmopen(false);
+        setItemToConfirm(null);
+    };
+
 
     return (
         <LayoutGlobal>
@@ -319,13 +424,15 @@ export default function DPKToDriver() {
                         <Select
                             style={{ width: '100%' }}
                             placeholder="Pilih Driver"
-                            value={selectedDriverId}
-                            onChange={setSelectedDriverId}
+                            value={selectedDriver}
+                            onChange={setSelectedDriver}
                             showSearch
+                            labelInValue
                             optionFilterProp="children"
                         >
                             {drivers.map(driver => (
-                                <Select.Option key={driver.ad_user_id} value={driver.ad_user_id}>
+                                <Select.Option key={driver.name} value={driver.ad_user_id}
+                                    label={driver.name}>
                                     {driver.name}
                                 </Select.Option>
                             ))}
@@ -349,6 +456,24 @@ export default function DPKToDriver() {
                         </Select>
                     </div>
                 </div>
+            </Modal>
+
+            <Modal
+                title="Confirm"
+                open={isModalConfirmOpen}
+                onOk={handleConfirmOk}
+                onCancel={handleConfirmClose}
+            >
+                <p>Apakah Anda yakin akan confirm dokumen <strong>{itemToConfirm?.documentno}</strong>?</p>
+            </Modal>
+
+            <Modal
+                title="Confirm cancel"
+                open={isModalRejectCancelOpen}
+                onOk={handleRejectCancelOk}
+                onCancel={handleRejectCancelClose}
+            >
+                <p>Apakah Anda yakin akan reject cancel dokumen <strong>{itemToRejectCancel?.documentno}</strong>?</p>
             </Modal>
         </LayoutGlobal>
     );

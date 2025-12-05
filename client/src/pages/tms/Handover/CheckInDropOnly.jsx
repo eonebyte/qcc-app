@@ -3,10 +3,13 @@ import { Button, Input, Space, Table, Modal, message, Switch } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
+import { useSelector } from "react-redux";
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 export default function CheckInDropOnly() {
+    const customers = useSelector(state => state.customers.list);
+
     const [tableData, setTableData] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -138,7 +141,16 @@ export default function CheckInDropOnly() {
             title: "Customer",
             dataIndex: "customer",
             key: "customer",
-            ...getColumnSearchProps("customer"),
+            ...(customers && customers.length > 0
+                ? {
+                    filters: customers.map(c => ({ text: c, value: c })),
+                    onFilter: (value, record) => record.customer === value,
+                }
+                : {
+                    // Jika customers Redux KOSONG → gunakan SEARCH dropdown
+                    ...getColumnSearchProps("customer"),
+                }
+            ),
         },
         {
             title: "Plan Time",
@@ -154,7 +166,8 @@ export default function CheckInDropOnly() {
         setLoading(true);
         try {
             const resp = await fetch(
-                `${backEndUrl}/handover/list/checkin/customer/do`
+                `${backEndUrl}/handover/list/checkin/customer/do`,
+                { credentials: "include" },
             );
             const json = await resp.json();
 
@@ -166,7 +179,12 @@ export default function CheckInDropOnly() {
                 customer: row.customer,
                 plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
                 checkpoin_id: row.checkpoin_id,
+                driverby: row.driverby,
+                tnkb_id: row.tnkb_id,
+                drivername: row.drivername
             }));
+
+
 
             setTableData(mapped);
         } catch (err) {
@@ -211,7 +229,33 @@ export default function CheckInDropOnly() {
     // ================== SUBMIT TO BACKEND ==================
     const handleSubmit = async () => {
         try {
+            if (selectedRows.length === 0) {
+                message.error("Tidak ada data yang dipilih.");
+                return;
+            }
+
+            // Ambil nilai driverBy dan tnkbId dari row pertama
+            const firstDriver = selectedRows[0].drivername;
+            const firstTnkb = selectedRows[0].tnkb_id;
+
+            // Cek apakah semua row punya driverBy yang sama
+            const validDriver = selectedRows.every(row => row.drivername === firstDriver);
+
+            // Cek apakah semua row punya tnkbId yang sama
+            const validTnkb = selectedRows.every(row => row.tnkb_id === firstTnkb);
+
+            if (!validDriver) {
+                message.error("Semua data yang dipilih harus memiliki driverBy yang sama!");
+                return;
+            }
+
+            if (!validTnkb) {
+                message.error("Semua data yang dipilih harus memiliki tnkbId yang sama!");
+                return;
+            }
             const payload = {
+                driverId: firstDriver,
+                tnkbId: Number(firstTnkb),
                 data: selectedRows,
             };
 

@@ -26,8 +26,8 @@ export default async (server, opts) => {
     server.post('/process/driver/to/customer', async (request, reply) => {
         try {
             const body = request.body;
-            const userId = request.user.ad_user_id;
-            const to_dpk = await server.handover.processDriverToCustomer(server, body, userId);
+            const userName = request.user.name;
+            const to_dpk = await server.handover.processDriverToCustomer(server, body, userName);
             reply.send({ message: 'fetch successfully', data: to_dpk });
         } catch (error) {
             request.log.error(error);
@@ -38,8 +38,8 @@ export default async (server, opts) => {
     server.post('/process/driver/to/customer/do', async (request, reply) => {
         try {
             const body = request.body;
-            const userId = request.user.ad_user_id;
-            const to_dpk = await server.handover.processDriverToCustomerDo(server, body, userId);
+            const userName = request.user.name;
+            const to_dpk = await server.handover.processDriverToCustomerDo(server, body, userName);
             reply.send({ message: 'fetch successfully', data: to_dpk });
         } catch (error) {
             request.log.error(error);

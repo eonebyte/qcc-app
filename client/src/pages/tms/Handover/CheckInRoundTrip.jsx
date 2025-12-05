@@ -1,16 +1,24 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Button, Input, Space, Table, Modal, message, Switch } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
+import { Button, Input, Space, Table, Modal, message, Switch, notification, Tag } from "antd";
+import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
+import axios from "axios";
+import { useDispatch } from "react-redux";
+import { setCustomers } from "../../../states/reducers/customerSlice";
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 export default function CheckInRoundTrip() {
+    const dispatch = useDispatch();
+
     const [tableData, setTableData] = useState([]);
     const [loading, setLoading] = useState(false);
 
     const [tripMode, setTripMode] = useState("RT");
+
+    // const [driver, setDriver] = useState(null);
+    // const [tnkb, setTnkb] = useState(null);
 
 
     const [pagination, setPagination] = useState({
@@ -23,6 +31,7 @@ export default function CheckInRoundTrip() {
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
     const [selectedRows, setSelectedRows] = useState([]);
 
+
     // modal
     const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -30,6 +39,10 @@ export default function CheckInRoundTrip() {
     const [searchText, setSearchText] = useState("");
     const [searchedColumn, setSearchedColumn] = useState("");
     const searchInput = useRef(null);
+
+
+    const [isModalCancelOpen, setIsModalCancelopen] = useState(false);
+    const [itemToCancel, setItemToCancel] = useState(null);
 
     const handleSearch = (selectedKeys, confirm, dataIndex) => {
         confirm();
@@ -118,6 +131,13 @@ export default function CheckInRoundTrip() {
             ),
     });
 
+
+    const showModalCancel = (shipment) => {
+        setItemToCancel(shipment);
+        setIsModalCancelopen(true);
+    };
+
+
     // ================== TABLE COLUMNS ==================
     const columns = [
         {
@@ -149,6 +169,25 @@ export default function CheckInRoundTrip() {
             ...getColumnSearchProps("plantime"),
             render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
         },
+        {
+            title: "Actions",
+            key: "actions",
+            width: 120,
+            render: (_, record) => {
+                console.log('tesss : ', record);
+                if (record.cancelrequest == 'N') {
+                    return (<Button onClick={() => showModalCancel(record)}
+                        icon={<CloseOutlined />} size='small' danger>Cancel</Button>)
+                } else {
+                    return (<Tag color={"warning"} variant={'solid'}>
+                        Waiting
+                    </Tag>)
+                }
+
+
+            }
+        }
+
     ];
 
     // ================== FETCH DATA API ==================
@@ -156,19 +195,34 @@ export default function CheckInRoundTrip() {
         setLoading(true);
         try {
             const resp = await fetch(
-                `${backEndUrl}/handover/list/checkin/customer`
+                `${backEndUrl}/handover/list/checkin/customer`,
+                { credentials: "include" },
             );
             const json = await resp.json();
 
+
+
             const mapped = json.data.data.map((row, index) => ({
                 key: row.m_inout_id,
+                adw_trackingsj_id: row.adw_trackingsj_id,
                 m_inout_id: row.m_inout_id,
                 no: index + 1,
                 documentno: row.documentno,
                 customer: row.customer,
                 plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
                 checkpoin_id: row.checkpoin_id,
+                driverby: row.driverby,
+                drivername: row.drivername,
+                tnkb_id: row.tnkb_id,
+                cancelrequest: row.cancelrequest,
             }));
+
+
+            const customersOnly = [...new Set(mapped.map(r => r.customer))];
+
+
+            dispatch(setCustomers(customersOnly));
+
 
             setTableData(mapped);
         } catch (err) {
@@ -213,8 +267,37 @@ export default function CheckInRoundTrip() {
     // ================== SUBMIT TO BACKEND ==================
     const handleSubmit = async () => {
         try {
+            if (selectedRows.length === 0) {
+                message.error("Tidak ada data yang dipilih.");
+                return;
+            }
+
+            // Ambil nilai driverBy dan tnkbId dari row pertama
+            const firstDriver = selectedRows[0].drivername;
+            const firstTnkb = selectedRows[0].tnkb_id;
+
+
+
+            // Cek apakah semua row punya driverBy yang sama
+            const validDriver = selectedRows.every(row => row.drivername === firstDriver);
+
+            // Cek apakah semua row punya tnkbId yang sama
+            const validTnkb = selectedRows.every(row => row.tnkb_id === firstTnkb);
+
+            if (!validDriver) {
+                message.error("Semua data yang dipilih harus memiliki driverBy yang sama!");
+                return;
+            }
+
+            if (!validTnkb) {
+                message.error("Semua data yang dipilih harus memiliki tnkbId yang sama!");
+                return;
+            }
+
             const payload = {
                 tripMode,
+                driverName: firstDriver,
+                tnkbId: Number(firstTnkb),
                 data: selectedRows,
             };
 
@@ -226,6 +309,7 @@ export default function CheckInRoundTrip() {
             });
 
             const json = await resp.json();
+
 
 
             if (json.data.insertedCount <= 0) {
@@ -244,6 +328,32 @@ export default function CheckInRoundTrip() {
             console.error(err);
             message.error("Terjadi error saat submit.");
         }
+    };
+
+    const handleCancelOk = async () => {
+        console.log("canceling item:", itemToCancel);
+        try {
+
+            const res = await axios.post(`${backEndUrl}/tms/req/cancel`, itemToCancel, { withCredentials: true });
+
+            if (res.data.success) {
+                notification.success({ message: 'Info', description: `Dokumen ${itemToCancel.documentno} akan diproses untuk dicancel.` });
+                fetchData();
+            } else {
+                notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
+            }
+        } catch (error) {
+            console.error("Submit error:", error);
+            notification.error({ message: 'cancel Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
+        } finally {
+            setIsModalCancelopen(false);
+            setItemToCancel(null);
+        }
+    };
+
+    const handleCancelClose = () => {
+        setIsModalCancelopen(false);
+        setItemToCancel(null);
     };
 
     return (
@@ -303,6 +413,15 @@ export default function CheckInRoundTrip() {
                         }
                     />
                 </div>
+            </Modal>
+
+            <Modal
+                title="Confirm cancel"
+                open={isModalCancelOpen}
+                onOk={handleCancelOk}
+                onCancel={handleCancelClose}
+            >
+                <p>Apakah Anda yakin akan mecancel dokumen <strong>{itemToCancel?.documentno}</strong>?</p>
             </Modal>
         </>
     );

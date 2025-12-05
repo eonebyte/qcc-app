@@ -11,6 +11,11 @@ export default function MKTToFAT() {
     const [tableData, setTableData] = useState([]);
     const [loading, setLoading] = useState(false);
 
+    const [isSppModalOpen, setIsSppModalOpen] = useState(false);
+    const [editingRow, setEditingRow] = useState(null);
+    const [sppInputValue, setSppInputValue] = useState("");
+
+
 
     const [pagination, setPagination] = useState({
         current: 1,
@@ -142,12 +147,42 @@ export default function MKTToFAT() {
             ...getColumnSearchProps("customer"),
         },
         {
+            title: "SPP NO",
+            dataIndex: "sppno",
+            key: "sppno",
+            ...getColumnSearchProps("sppno"),
+        },
+        {
             title: "Plan Time",
             dataIndex: "plantime",
             key: "plantime",
             ...getColumnSearchProps("plantime"),
             render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
         },
+        {
+            title: "Action",
+            key: "action",
+            width: 140,
+            render: (row) => {
+                if (!row.sppno) {
+                    return (
+                        <Button
+                            type="primary"
+                            size="small"
+                            onClick={() => {
+                                setEditingRow(row);
+                                setSppInputValue("");
+                                setIsSppModalOpen(true);
+                            }}
+                        >
+                            Isi SPPNO
+                        </Button>
+                    );
+                }
+                return "-";
+            }
+        }
+
     ];
 
     // ================== FETCH DATA API ==================
@@ -155,7 +190,8 @@ export default function MKTToFAT() {
         setLoading(true);
         try {
             const resp = await fetch(
-                `${backEndUrl}/handover/list/mkt/to/fat`
+                `${backEndUrl}/handover/list/mkt/to/fat`,
+                { credentials: "include" }
             );
             const json = await resp.json();
 
@@ -167,6 +203,9 @@ export default function MKTToFAT() {
                 customer: row.customer,
                 plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
                 checkpoin_id: row.checkpoin_id,
+                driverby: row.driverby,
+                tnkb_id: row.tnkb_id,
+                sppno: row.sppno
             }));
 
             setTableData(mapped);
@@ -202,7 +241,33 @@ export default function MKTToFAT() {
     // ================== SUBMIT TO BACKEND ==================
     const handleSubmit = async () => {
         try {
+            if (selectedRows.length === 0) {
+                message.error("Tidak ada data yang dipilih.");
+                return;
+            }
+
+            // Ambil nilai driverBy dan tnkbId dari row pertama
+            const firstDriver = selectedRows[0].driverby;
+            const firstTnkb = selectedRows[0].tnkb_id;
+
+            // Cek apakah semua row punya driverBy yang sama
+            const validDriver = selectedRows.every(row => row.driverby === firstDriver);
+
+            // Cek apakah semua row punya tnkbId yang sama
+            const validTnkb = selectedRows.every(row => row.tnkb_id === firstTnkb);
+
+            if (!validDriver) {
+                message.error("Semua data yang dipilih harus memiliki driverBy yang sama!");
+                return;
+            }
+
+            if (!validTnkb) {
+                message.error("Semua data yang dipilih harus memiliki tnkbId yang sama!");
+                return;
+            }
             const payload = {
+                driverId: Number(firstDriver),
+                tnkbId: Number(firstTnkb),
                 data: selectedRows,
             };
 
@@ -259,7 +324,8 @@ export default function MKTToFAT() {
                 <div style={{ marginTop: 16 }}>
                     <Button
                         type="primary"
-                        disabled={selectedRows.length === 0}
+                        disabled={selectedRows.length === 0 ||
+                            selectedRows.some(row => !row.sppno)}
                         onClick={openHandoverModal}
                     >
                         Handover
@@ -283,6 +349,53 @@ export default function MKTToFAT() {
                         ))}
                     </ul>
                 </Modal>
+
+                <Modal
+                    title={`Isi SPPNO untuk ${editingRow?.documentno}`}
+                    open={isSppModalOpen}
+                    onCancel={() => setIsSppModalOpen(false)}
+                    onOk={async () => {
+                        if (!sppInputValue.trim()) {
+                            message.error("SPPNO tidak boleh kosong");
+                            return;
+                        }
+
+                        try {
+                            const resp = await fetch(`${backEndUrl}/tms/update-sppno`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    m_inout_id: editingRow.m_inout_id,
+                                    sppno: sppInputValue.trim()
+                                }),
+                                credentials: "include"
+                            });
+
+                            const json = await resp.json();
+
+                            if (!json.success) {
+                                message.error(json.message || "Gagal update SPPNO");
+                                return;
+                            }
+
+                            message.success("SPPNO berhasil diupdate!");
+
+                            setIsSppModalOpen(false);
+                            fetchData(); // refresh tabel
+
+                        } catch (error) {
+                            console.error(error);
+                            message.error("Server error");
+                        }
+                    }}
+                >
+                    <Input
+                        placeholder="Masukkan SPPNO"
+                        value={sppInputValue}
+                        onChange={(e) => setSppInputValue(e.target.value)}
+                    />
+                </Modal>
+
             </LayoutGlobal>
         </>
     );

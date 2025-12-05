@@ -83,7 +83,7 @@ const History = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${backEndUrl}/tms/history?role=${role}`);
+            const res = await axios.get(`${backEndUrl}/tms/history?role=${role}`, { withCredentials: true });
 
             if (res.data.data && res.data.data.success) {
                 const rawData = res.data.data.data;

@@ -10,7 +10,8 @@ const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
 
 const DriverFromDPK = () => {
     const user = useSelector((state) => state.auth.user);
-    const userId = user.ad_user_id;
+    // const userId = user.ad_user_id;
+    const userName = user.name;
 
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -29,10 +30,11 @@ const DriverFromDPK = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${backEndUrl}/receipt/list/driver/from/dpk`);
+            const res = await axios.get(`${backEndUrl}/receipt/list/driver/from/dpk`, { withCredentials: true });
 
             if (res.data.data && res.data.data.success) {
-                const rawBundles = res.data.data.data || [];
+                const rawBundles = (res.data.data.data || [])
+                    .filter(bundle => bundle.drivername === userName);
 
                 const processedData = rawBundles.map(bundle => {
                     const processedShipments = bundle.shipments
@@ -48,6 +50,9 @@ const DriverFromDPK = () => {
                         shipments: processedShipments,
                     };
                 }).filter(bundle => bundle.shipments.length > 0);
+
+                console.log('processed Data : ', processedData);
+
 
                 setData(processedData);
             } else {
