@@ -1126,9 +1126,8 @@ class TMS {
             dbClient = await server.pg.connect();
 
             const queryPostgres = `
-            SELECT sj.*, au.name drivername
+            SELECT sj.*, sj.drivername
                 FROM adw_trackingsj sj
-                LEFT JOIN ad_user au ON sj.driverby = au.ad_user_id
                 WHERE CAST(sj.checkpoin_id AS INTEGER) >= $1 AND CAST(sj.checkpoin_id AS INTEGER) < $2
                 ORDER BY sj.documentno DESC`;
             const values = [configRole.columnCheckpointOutstanding, configRole.columnCheckpointOutstandingEnd];
@@ -2070,7 +2069,7 @@ class TMS {
         }
     }
 
-    async getHistory2(server, page, pageSize, startDate, endDate) {
+    async getHistory2(server, page, pageSize, startDate, endDate, docNo) {
         let connection;
         let dbClient;
 
@@ -2121,6 +2120,19 @@ class TMS {
             const oracleStartDate = dayjs(finalStartDate).format("YYYY-MM-DD");
             const oracleEndDate = dayjs(finalEndDate).format("YYYY-MM-DD");
 
+
+            let docFilter = "";
+            if (docNo && docNo.trim() !== "") {
+                docFilter = ` AND mi.DOCUMENTNO LIKE '%' || :docNo || '%' `;
+            }
+
+            const binds = {
+                startRow, endRow,
+                startDate: oracleStartDate,
+                endDate: oracleEndDate,
+                ...(docNo?.trim() ? { docNo: docNo.trim() } : {})
+            };
+
             // 2. Ambil data master dari Oracle terlebih dahulu
             // Ini adalah sumber data utama kita untuk periode yang diinginkan.
             const queryOracle = `
@@ -2147,6 +2159,7 @@ class TMS {
                 AND (mi.POREFERENCE NOT LIKE '%SAMPLE%' OR mi.POREFERENCE IS NULL)
                 AND cb.ISSUBCONTRACT = 'N'
                 AND co.ISMILKRUN = 'N'
+                ${docFilter}
             ORDER BY DOCUMENTNO DESC
             ) a
             WHERE ROWNUM <= :endRow
@@ -2154,12 +2167,17 @@ class TMS {
         WHERE rnum > :startRow
         `;
 
-            const binds = { startRow, endRow, startDate: oracleStartDate, endDate: oracleEndDate };
 
             const resultOracle = await connection.execute(queryOracle, binds, {
                 outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT
             });
             const oracleRows = resultOracle.rows || [];
+
+            const countBinds = {
+                startDate: oracleStartDate,
+                endDate: oracleEndDate,
+                ...(docNo?.trim() ? { docNo: docNo.trim() } : {}) // Tambahkan ini
+            };
 
             // total count buat pagination AntD
             const totalResult = await connection.execute(`
@@ -2174,10 +2192,8 @@ class TMS {
                 AND (mi.POREFERENCE NOT LIKE '%SAMPLE%' OR mi.POREFERENCE IS NULL)
                 AND cb.ISSUBCONTRACT = 'N'
                 AND co.ISMILKRUN = 'N'
-            `, {
-                startDate: oracleStartDate,
-                endDate: oracleEndDate
-            });
+                ${docFilter}
+            `, countBinds);
 
             const totalRows = totalResult.rows[0].TOTAL || totalResult.rows[0][0];
 
@@ -4026,7 +4042,9 @@ class TMS {
         let dbClient;
         let oracleConnection;
 
-        const { adw_trackingsj_id } = payload;
+
+        const { itemToCancel, noteCancel } = payload;
+        const { adw_trackingsj_id } = itemToCancel;
 
         try {
 
@@ -4034,11 +4052,11 @@ class TMS {
 
             const updateQuery = `
             UPDATE adw_trackingsj
-            SET cancelrequest = 'Y'
+            SET cancelrequest = 'Y', notes = $2
             WHERE adw_trackingsj_id = $1
             RETURNING *;
         `;
-            const updated = await dbClient.query(updateQuery, [adw_trackingsj_id]);
+            const updated = await dbClient.query(updateQuery, [adw_trackingsj_id, noteCancel]);
 
 
             return {
@@ -4063,7 +4081,7 @@ class TMS {
         const { adw_trackingsj_id } = payload;
 
         console.log('id : ', adw_trackingsj_id);
-        
+
 
         try {
 
@@ -4151,7 +4169,17 @@ class TMS {
 
 
             // QUERY 1: Delete events HANDOVER where event checkpoint = t.checkpoin_id - 1
-            const deleteEventsQuery = `
+            const deleteHoEventsQuery = `
+            DELETE FROM adw_trackingsj_events ate
+            USING adw_trackingsj t
+            WHERE ate.adw_trackingsj_id = t.adw_trackingsj_id
+              AND t.adw_trackingsj_id = $1
+              AND ate.adw_event_type = 'HANDOVER'
+              AND CAST(ate.checkpoin_id AS INTEGER) = (CAST(t.checkpoin_id AS INTEGER)-1)
+        `;
+            await dbClient.query(deleteHoEventsQuery, [adw_trackingsj_id]);
+
+            const deleteAccEventsQuery = `
             DELETE FROM adw_trackingsj_events ate
             USING adw_trackingsj t
             WHERE ate.adw_trackingsj_id = t.adw_trackingsj_id
@@ -4159,19 +4187,38 @@ class TMS {
               AND ate.adw_event_type = 'ACCEPTANCE'
               AND CAST(ate.checkpoin_id AS INTEGER) = CAST(t.checkpoin_id AS INTEGER)
         `;
-            await dbClient.query(deleteEventsQuery, [adw_trackingsj_id]);
+            await dbClient.query(deleteAccEventsQuery, [adw_trackingsj_id]);
 
 
             // QUERY 2: Delete group_sj with matching checkpoint
-            const deleteGroupQuery = `
-            DELETE FROM adw_group_sj ags
-            USING adw_trackingsj t
-            WHERE ags.adw_trackingsj_id = t.adw_trackingsj_id
-              AND ags.adw_trackingsj_id = $1
-              AND CAST(ags.checkpoint AS INTEGER) = CAST(t.checkpoin_id AS INTEGER);
-        `;
-            await dbClient.query(deleteGroupQuery, [adw_trackingsj_id]);
+            // Ambil ID group yang cocok checkpoint
+            const getGroupIdsQuery = `
+                SELECT ags.adw_handover_group_id
+                FROM adw_group_sj ags
+                JOIN adw_trackingsj t ON ags.adw_trackingsj_id = t.adw_trackingsj_id
+                WHERE ags.adw_trackingsj_id = $1
+                AND CAST(ags.checkpoint AS INTEGER) = (CAST(t.checkpoin_id AS INTEGER) - 1);
+            `;
+            const resGroup = await dbClient.query(getGroupIdsQuery, [adw_trackingsj_id]);
 
+            // Hapus pivot sesuai checkpoint
+            await dbClient.query(`
+                DELETE FROM adw_group_sj ags
+                USING adw_trackingsj t
+                WHERE ags.adw_trackingsj_id = t.adw_trackingsj_id
+                AND ags.adw_trackingsj_id = $1
+                AND CAST(ags.checkpoint AS INTEGER) = (CAST(t.checkpoin_id AS INTEGER) - 1);
+            `, [adw_trackingsj_id]);
+
+            // Jika ada group terkait — hapus parent-nya
+            if (resGroup.rowCount > 0) {
+                const groupIds = resGroup.rows.map(row => row.adw_handover_group_id);
+
+                await dbClient.query(
+                    `DELETE FROM adw_handover_group WHERE adw_handover_group_id = ANY($1)`,
+                    [groupIds]
+                );
+            }
 
             // QUERY 3: Update t.checkpoin_id - 1
             const updateQuery = `

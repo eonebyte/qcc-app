@@ -1,0 +1,599 @@
+import React, { useEffect, useRef, useState } from "react";
+import { Button, Input, Space, Table, Modal, message, Switch, notification, Tag } from "antd";
+import { CheckCircleOutlined, CloseOutlined, SearchOutlined } from "@ant-design/icons";
+import Highlighter from "react-highlight-words";
+import dayjs from "dayjs";
+import axios from "axios";
+import { useDispatch, useSelector } from "react-redux";
+import { setCustomers } from "../../../states/reducers/customerSlice";
+import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
+
+const { TextArea } = Input;
+
+
+const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
+
+export default function CheckOut() {
+    const dispatch = useDispatch();
+
+    const customers = useSelector(state => state.customers.list);
+
+    const [noteCancel, setNoteCancel] = useState("");
+
+
+
+    const [tableData, setTableData] = useState([]);
+    const [loading, setLoading] = useState(false);
+
+    const [tableDataDropOnly, setTableDataDropOnly] = useState([]);
+
+    // const [driver, setDriver] = useState(null);
+    // const [tnkb, setTnkb] = useState(null);
+
+
+    const [pagination, setPagination] = useState({
+        current: 1,
+        pageSize: 10
+    });
+
+
+    // selected rows
+    const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+    const [selectedRowKeysDropOnly, setSelectedRowKeysDropOnly] = useState([]);
+    const [selectedRowsDropOnly, setSelectedRowsDropOnly] = useState([]);
+    const [selectedRows, setSelectedRows] = useState([]);
+
+
+    // modal
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // SEARCH
+    const [searchText, setSearchText] = useState("");
+    const [searchedColumn, setSearchedColumn] = useState("");
+    const searchInput = useRef(null);
+
+
+    const [isModalCancelOpen, setIsModalCancelopen] = useState(false);
+    const [itemToCancel, setItemToCancel] = useState(null);
+
+    const handleSearch = (selectedKeys, confirm, dataIndex) => {
+        confirm();
+        setSearchText(selectedKeys[0]);
+        setSearchedColumn(dataIndex);
+    };
+
+    const handleReset = (clearFilters) => {
+        clearFilters();
+        setSearchText("");
+    };
+
+    const getColumnSearchProps = (dataIndex) => ({
+        filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters, close }) => (
+            <div style={{ padding: 8 }} onKeyDown={(e) => e.stopPropagation()}>
+                <Input
+                    ref={searchInput}
+                    placeholder={`Search ${dataIndex}`}
+                    value={selectedKeys[0]}
+                    onChange={(e) => setSelectedKeys(e.target.value ? [e.target.value] : [])}
+                    onPressEnter={() => handleSearch(selectedKeys, confirm, dataIndex)}
+                    style={{ marginBottom: 8, display: "block" }}
+                />
+
+                <Space>
+                    <Button
+                        type="primary"
+                        onClick={() => handleSearch(selectedKeys, confirm, dataIndex)}
+                        icon={<SearchOutlined />}
+                        size="small"
+                        style={{ width: 90 }}
+                    >
+                        Search
+                    </Button>
+
+                    <Button
+                        onClick={() => clearFilters && handleReset(clearFilters)}
+                        size="small"
+                        style={{ width: 90 }}
+                    >
+                        Reset
+                    </Button>
+
+                    <Button
+                        type="link"
+                        size="small"
+                        onClick={() => {
+                            confirm({ closeDropdown: false });
+                            setSearchText(selectedKeys[0]);
+                            setSearchedColumn(dataIndex);
+                        }}
+                    >
+                        Filter
+                    </Button>
+
+                    <Button type="link" size="small" onClick={() => close()}>
+                        Close
+                    </Button>
+                </Space>
+            </div>
+        ),
+        filterIcon: (filtered) => (
+            <SearchOutlined style={{ color: filtered ? "#1677ff" : undefined }} />
+        ),
+        onFilter: (value, record) =>
+            record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
+
+        filterDropdownProps: {
+            onOpenChange(open) {
+                if (open) {
+                    setTimeout(() => searchInput.current?.select(), 100);
+                }
+            },
+        },
+
+        render: (text) =>
+            searchedColumn === dataIndex ? (
+                <Highlighter
+                    highlightStyle={{ backgroundColor: "#ffc069", padding: 0 }}
+                    searchWords={[searchText]}
+                    autoEscape
+                    textToHighlight={text ? text.toString() : ""}
+                />
+            ) : (
+                text
+            ),
+    });
+
+
+    const showModalCancel = (shipment) => {
+        setItemToCancel(shipment);
+        setIsModalCancelopen(true);
+    };
+
+
+    // ================== TABLE COLUMNS ==================
+    const columns = [
+        {
+            title: "No",
+            dataIndex: "no",
+            key: "no",
+            width: 60,
+            render: (_text, _record, index) => {
+                const { current, pageSize } = pagination;
+                return (current - 1) * pageSize + index + 1;
+            }
+        },
+        {
+            title: "Document No",
+            dataIndex: "documentno",
+            key: "documentno",
+            ...getColumnSearchProps("documentno"),
+        },
+        {
+            title: "Customer",
+            dataIndex: "customer",
+            key: "customer",
+            ...getColumnSearchProps("customer"),
+        },
+        {
+            title: "Plan Time",
+            dataIndex: "plantime",
+            key: "plantime",
+            ...getColumnSearchProps("plantime"),
+            render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-',
+        },
+        {
+            title: "Actions",
+            key: "actions",
+            width: 120,
+            render: (_, record) => {
+                if (record.cancelrequest == 'N') {
+                    return (<Button onClick={() => showModalCancel(record)}
+                        icon={<CloseOutlined />} size='small' danger>Cancel</Button>)
+                } else {
+                    return (<Tag color={"warning"} variant={'solid'}>
+                        Waiting
+                    </Tag>)
+                }
+
+
+            }
+        }
+
+    ];
+
+    // ================== FETCH DATA API ==================
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            const resp = await fetch(
+                `${backEndUrl}/handover/list/checkin/customer`,
+                { credentials: "include" },
+            );
+            const json = await resp.json();
+
+
+
+            const mapped = json.data.data.map((row, index) => ({
+                key: row.m_inout_id,
+                adw_trackingsj_id: row.adw_trackingsj_id,
+                m_inout_id: row.m_inout_id,
+                no: index + 1,
+                documentno: row.documentno,
+                customer: row.customer,
+                plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
+                checkpoin_id: row.checkpoin_id,
+                driverby: row.driverby,
+                drivername: row.drivername,
+                tnkb_id: row.tnkb_id,
+                cancelrequest: row.cancelrequest,
+            }));
+
+
+            const customersOnly = [...new Set(mapped.map(r => r.customer))];
+
+
+            dispatch(setCustomers(customersOnly));
+
+
+            setTableData(mapped);
+        } catch (err) {
+            console.error("Fetch error:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchDataDropOnly = async () => {
+        setLoading(true);
+        try {
+            const resp = await fetch(
+                `${backEndUrl}/handover/list/checkin/customer/do`,
+                { credentials: "include" },
+            );
+            const json = await resp.json();
+
+            const mapped = json.data.data.map((row, index) => ({
+                key: row.m_inout_id,
+                m_inout_id: row.m_inout_id,
+                no: index + 1,
+                documentno: row.documentno,
+                customer: row.customer,
+                plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
+                checkpoin_id: row.checkpoin_id,
+                driverby: row.driverby,
+                tnkb_id: row.tnkb_id,
+                drivername: row.drivername
+            }));
+
+
+
+            setTableDataDropOnly(mapped);
+        } catch (err) {
+            console.error("Fetch error:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+
+    useEffect(() => {
+        fetchData();
+        fetchDataDropOnly();
+    }, []);
+
+    // ================== ROW SELECTION ==================
+    const rowSelection = {
+        selectedRowKeys,
+        onChange: (selectedKeys, selectedRows) => {
+            setSelectedRowKeys(selectedKeys);
+            setSelectedRows(selectedRows);
+        },
+    };
+
+    // ================== OPEN MODAL ==================
+    const openHandoverModal = () => {
+        if (selectedRows.length === 0) {
+            message.warning("Pilih minimal 1 row.");
+            return;
+        }
+        setIsModalOpen(true);
+    };
+
+    const validateSelection = (rows) => {
+        if (!rows || rows.length === 0) return "Tidak ada data dipilih.";
+
+        const firstDriver = rows[0].drivername;
+        const firstTnkb = rows[0].tnkb_id;
+
+        if (!rows.every(row => row.drivername === firstDriver))
+            return "Driver harus sama.";
+
+        if (!rows.every(row => row.tnkb_id === firstTnkb))
+            return "TNKB harus sama.";
+
+        return null;
+    };
+
+    const submitRoundTrip = async () => {
+        const error = validateSelection(selectedRows);
+        if (error) {
+            message.error(error);
+            return;
+        }
+
+        const errorDropOnly = validateSelection(selectedRowsDropOnly);
+        if (errorDropOnly) {
+            // NOTE ❗ kalau kamu tidak mau block ketika kosong, 
+            // cukup return null bukan message error.
+            return;
+        }
+
+        const payloadDropOnly = {
+            driverName: selectedRowsDropOnly[0].drivername,
+            tnkbId: Number(selectedRowsDropOnly[0].tnkb_id),
+            data: selectedRowsDropOnly,
+        };
+
+        const payload = {
+            driverName: selectedRows[0].drivername,
+            tnkbId: Number(selectedRows[0].tnkb_id),
+            data: selectedRows
+        };
+
+        return fetch(`${backEndUrl}/handover/process/driver/to/customer`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            credentials: "include"
+        });
+    };
+
+    const submitDropOnly = async () => {
+        const error = validateSelection(selectedRowsDropOnly);
+        if (error) {
+            // NOTE ❗ kalau kamu tidak mau block ketika kosong, 
+            // cukup return null bukan message error.
+            return;
+        }
+
+        const payload = {
+            driverName: selectedRowsDropOnly[0].drivername,
+            tnkbId: Number(selectedRowsDropOnly[0].tnkb_id),
+            data: selectedRowsDropOnly,
+        };
+
+        return fetch(`${backEndUrl}/handover/process/driver/to/customer/do`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            credentials: "include"
+        });
+    };
+
+    // ================== SUBMIT TO BACKEND ==================
+    const handleSubmit = async () => {
+        try {
+            const resp1 = await submitRoundTrip();
+            const resp2 = await submitDropOnly();
+
+            if (resp1?.ok) console.log("RT OK");
+            if (resp2?.ok) console.log("DO OK");
+
+            message.success("Submit handover berhasil!");
+            setIsModalOpen(false);
+            setSelectedRows([]);
+            setSelectedRowKeys([]);
+            setSelectedRowsDropOnly([]);
+            setSelectedRowKeysDropOnly([]);
+
+            fetchData();
+            fetchDataDropOnly();
+        } catch (err) {
+            console.error(err);
+            message.error("Terjadi error saat submit.");
+        }
+    };
+
+    const handleCancelOk = async () => {
+        try {
+
+            const payload = {
+                itemToCancel,
+                noteCancel
+            }
+
+            const res = await axios.post(`${backEndUrl}/tms/req/cancel`, payload, { withCredentials: true });
+
+            if (res.data.success) {
+                notification.success({ message: 'Info', description: `Dokumen ${payload.itemToCancel.documentno} akan diproses untuk dicancel.` });
+                fetchData();
+            } else {
+                notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
+            }
+        } catch (error) {
+            console.error("Submit error:", error);
+            notification.error({ message: 'cancel Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
+        } finally {
+            setIsModalCancelopen(false);
+            setItemToCancel(null);
+            setNoteCancel("")
+        }
+
+    };
+
+    const handleCancelClose = () => {
+        setIsModalCancelopen(false);
+        setItemToCancel(null);
+    };
+
+    useEffect(() => {
+        if (isModalOpen) {
+            const updated = selectedRows.map(r => ({
+                ...r,
+                tripMode: r.tripMode || "DO"   // default "DO"
+            }));
+            setSelectedRows(updated);
+        }
+    }, [isModalOpen]);
+
+    // ====DROP ONLY===
+    const columnsDropOnly = [
+        {
+            title: "No",
+            dataIndex: "no",
+            key: "no",
+            width: 60,
+            render: (_text, _record, index) => {
+                const { current, pageSize } = pagination;
+                return (current - 1) * pageSize + index + 1;
+            }
+        },
+        {
+            title: "Document No",
+            dataIndex: "documentno",
+            key: "documentno",
+            ...getColumnSearchProps("documentno"),
+        },
+        {
+            title: "Customer",
+            dataIndex: "customer",
+            key: "customer",
+            ...(customers && customers.length > 0
+                ? {
+                    filters: customers.map(c => ({ text: c, value: c })),
+                    onFilter: (value, record) => record.customer === value,
+                }
+                : {
+                    // Jika customers Redux KOSONG → gunakan SEARCH dropdown
+                    ...getColumnSearchProps("customer"),
+                }
+            ),
+        },
+        {
+            title: "Plan Time",
+            dataIndex: "plantime",
+            key: "plantime",
+            ...getColumnSearchProps("plantime"),
+            render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
+        },
+    ];
+
+
+
+    const rowSelectionDropOnly = {
+        selectedRowKeysDropOnly,
+        onChange: (selectedKeys, selectedRows) => {
+            setSelectedRowKeysDropOnly(selectedKeys);
+            setSelectedRowsDropOnly(selectedRows);
+        },
+    };
+
+    // ================== OPEN MODAL ==================
+
+    return (
+        <>
+            <LayoutGlobal>
+                <Table
+                    rowSelection={rowSelection}
+                    columns={columns}
+                    dataSource={tableData}
+                    bordered
+                    loading={loading}
+                    pagination={{
+                        ...pagination,
+                        total: tableData.length,
+                        onChange: (page, pageSize) => {
+                            setPagination({ current: page, pageSize });
+                        }
+                    }}
+                />
+
+                {/* BUTTON HANDOVER */}
+                <div style={{ marginTop: 16 }}>
+                    <Button
+                        type="primary"
+                        disabled={selectedRows.length === 0}
+                        onClick={openHandoverModal}
+                    >
+                        Check Out
+                    </Button>
+                </div>
+
+                {/* MODAL CONFIRMATION */}
+                <Modal
+                    title="Confirm Handover"
+                    open={isModalOpen}
+                    onCancel={() => setIsModalOpen(false)}
+                    onOk={handleSubmit}
+                    okText="Submit"
+                    cancelText="Cancel"
+                    width={800}
+                >
+                    <p>Apakah Anda yakin ingin submit berikut:</p>
+
+                    <ul>
+                        {selectedRows.map((r, index) => (
+                            <li key={r.key}
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    marginBottom: 8,
+                                    alignItems: "center",
+                                    listStyle: "none"
+                                }}>
+                                <Space>
+                                    <CheckCircleOutlined />
+                                    <span><strong>{r.documentno}</strong></span>
+                                    <Switch
+                                        checkedChildren="ROUND TRIP"
+                                        unCheckedChildren="DROP ONLY"
+                                        defaultChecked
+                                        checked={r.tripMode === "RT"}
+                                        onChange={(checked) => {
+                                            const updated = [...selectedRows];
+                                            updated[index] = { ...updated[index], tripMode: checked ? "RT" : "DO" };
+                                            setSelectedRows(updated);
+                                        }}
+                                    />
+                                </Space>
+                            </li>
+                        ))}
+                    </ul>
+
+                    <div style={{ marginTop: 16 }}>
+                        <p style={{ marginBottom: 8 }}>List Drop Only for Receipt:</p>
+                        <Table
+                            rowSelection={rowSelectionDropOnly}
+                            columns={columnsDropOnly}
+                            dataSource={tableDataDropOnly}
+                            bordered
+                            loading={loading}
+                            pagination={{
+                                ...pagination,
+                                total: tableDataDropOnly.length,
+                                onChange: (page, pageSize) => {
+                                    setPagination({ current: page, pageSize });
+                                }
+                            }}
+                        />
+                    </div>
+                </Modal>
+
+                <Modal
+                    title="Confirm cancel"
+                    open={isModalCancelOpen}
+                    onOk={handleCancelOk}
+                    onCancel={handleCancelClose}
+                    okButtonProps={{ disabled: !noteCancel?.trim() }} // <- disable ketika kosong
+                >
+                    <p>Apakah Anda yakin akan mecancel dokumen <strong>{itemToCancel?.documentno}</strong>?</p>
+
+                    Notes:
+                    <TextArea rows={4}
+                        value={noteCancel}
+                        onChange={(e) => setNoteCancel(e.target.value)} />
+                </Modal>
+            </LayoutGlobal>
+        </>
+    );
+}

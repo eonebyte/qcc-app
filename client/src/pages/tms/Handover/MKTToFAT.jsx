@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Button, Input, Space, Table, Modal, message, Switch } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
+import React, { useEffect, useRef, useState, useMemo } from "react";
+import { Button, Input, Space, Table, Modal, message, Badge } from "antd";
+import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
@@ -8,33 +8,25 @@ import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 export default function MKTToFAT() {
-    const [tableData, setTableData] = useState([]);
+    // Data asli (flat list) dari API
     const [loading, setLoading] = useState(false);
 
-    const [isSppModalOpen, setIsSppModalOpen] = useState(false);
-    const [editingRow, setEditingRow] = useState(null);
-    const [sppInputValue, setSppInputValue] = useState("");
+    const [data, setData] = useState([]);
 
 
-
-    const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 10
-    });
-
-
-    // selected rows
+    // Selected rows (Sekarang menyimpan Object Group / Parent)
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-    const [selectedRows, setSelectedRows] = useState([]);
+    const [selectedGroupRows, setSelectedGroupRows] = useState([]);
 
-    // modal
+    // Modal Handover
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    // SEARCH
+    // SEARCH states
     const [searchText, setSearchText] = useState("");
     const [searchedColumn, setSearchedColumn] = useState("");
     const searchInput = useRef(null);
 
+    // ================== SEARCH LOGIC ==================
     const handleSearch = (selectedKeys, confirm, dataIndex) => {
         confirm();
         setSearchText(selectedKeys[0]);
@@ -57,7 +49,6 @@ export default function MKTToFAT() {
                     onPressEnter={() => handleSearch(selectedKeys, confirm, dataIndex)}
                     style={{ marginBottom: 8, display: "block" }}
                 />
-
                 <Space>
                     <Button
                         type="primary"
@@ -68,7 +59,6 @@ export default function MKTToFAT() {
                     >
                         Search
                     </Button>
-
                     <Button
                         onClick={() => clearFilters && handleReset(clearFilters)}
                         size="small"
@@ -76,19 +66,6 @@ export default function MKTToFAT() {
                     >
                         Reset
                     </Button>
-
-                    <Button
-                        type="link"
-                        size="small"
-                        onClick={() => {
-                            confirm({ closeDropdown: false });
-                            setSearchText(selectedKeys[0]);
-                            setSearchedColumn(dataIndex);
-                        }}
-                    >
-                        Filter
-                    </Button>
-
                     <Button type="link" size="small" onClick={() => close()}>
                         Close
                     </Button>
@@ -100,15 +77,6 @@ export default function MKTToFAT() {
         ),
         onFilter: (value, record) =>
             record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
-
-        filterDropdownProps: {
-            onOpenChange(open) {
-                if (open) {
-                    setTimeout(() => searchInput.current?.select(), 100);
-                }
-            },
-        },
-
         render: (text) =>
             searchedColumn === dataIndex ? (
                 <Highlighter
@@ -121,69 +89,6 @@ export default function MKTToFAT() {
                 text
             ),
     });
-
-    // ================== TABLE COLUMNS ==================
-    const columns = [
-        {
-            title: "No",
-            dataIndex: "no",
-            key: "no",
-            width: 60,
-            render: (_text, _record, index) => {
-                const { current, pageSize } = pagination;
-                return (current - 1) * pageSize + index + 1;
-            }
-        },
-        {
-            title: "Document No",
-            dataIndex: "documentno",
-            key: "documentno",
-            ...getColumnSearchProps("documentno"),
-        },
-        {
-            title: "Customer",
-            dataIndex: "customer",
-            key: "customer",
-            ...getColumnSearchProps("customer"),
-        },
-        {
-            title: "SPP NO",
-            dataIndex: "sppno",
-            key: "sppno",
-            ...getColumnSearchProps("sppno"),
-        },
-        {
-            title: "Plan Time",
-            dataIndex: "plantime",
-            key: "plantime",
-            ...getColumnSearchProps("plantime"),
-            render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
-        },
-        {
-            title: "Action",
-            key: "action",
-            width: 140,
-            render: (row) => {
-                if (!row.sppno) {
-                    return (
-                        <Button
-                            type="primary"
-                            size="small"
-                            onClick={() => {
-                                setEditingRow(row);
-                                setSppInputValue("");
-                                setIsSppModalOpen(true);
-                            }}
-                        >
-                            Isi SPPNO
-                        </Button>
-                    );
-                }
-                return "-";
-            }
-        }
-
-    ];
 
     // ================== FETCH DATA API ==================
     const fetchData = async () => {
@@ -205,12 +110,14 @@ export default function MKTToFAT() {
                 checkpoin_id: row.checkpoin_id,
                 driverby: row.driverby,
                 tnkb_id: row.tnkb_id,
+                drivername: row.drivername,
                 sppno: row.sppno
             }));
 
-            setTableData(mapped);
+            setData(mapped);
         } catch (err) {
             console.error("Fetch error:", err);
+            message.error("Gagal mengambil data");
         } finally {
             setLoading(false);
         }
@@ -220,58 +127,154 @@ export default function MKTToFAT() {
         fetchData();
     }, []);
 
-    // ================== ROW SELECTION ==================
+    // ================== GROUPING DATA ==================
+    const groupedData = useMemo(() => {
+        const groups = {};
+
+        data.forEach((item) => {
+            const groupKey = item.sppno || "NO_SPP";
+
+            if (!groups[groupKey]) {
+                groups[groupKey] = {
+                    key: `group_${groupKey}`, // Key untuk row Parent
+                    sppno: item.sppno,
+                    customer: item.customer,
+                    childrenCount: 0,
+                    items: [] // Array data child
+                };
+            }
+            groups[groupKey].items.push(item);
+            groups[groupKey].childrenCount += 1;
+        });
+
+        return Object.values(groups);
+    }, [data]);
+
+    // ================== HELPER: GET ALL SELECTED ITEMS ==================
+    // Karena user memilih Group, kita butuh fungsi untuk mengambil semua item detail di dalamnya
+    const getAllSelectedItems = () => {
+        return selectedGroupRows.flatMap(group => group.items);
+    };
+
+    // ================== PARENT TABLE COLUMNS ==================
+    const parentColumns = [
+        {
+            title: "SPP NO",
+            dataIndex: "sppno",
+            key: "sppno",
+            ...getColumnSearchProps("sppno"),
+            render: (text) => text ? <b>{text}</b> : <span style={{ color: 'red', fontStyle: 'italic' }}>Belum Ada SPP</span>
+        },
+        {
+            title: "Customer",
+            dataIndex: "customer",
+            key: "customer",
+            ...getColumnSearchProps("customer"),
+        },
+        {
+            title: "Jumlah Dokumen",
+            dataIndex: "childrenCount",
+            key: "childrenCount",
+            render: (count) => <Badge count={count} showZero color="#108ee9" />
+        }
+    ];
+
+
+    // ================== CHILD TABLE COLUMNS ==================
+    const childColumns = [
+        {
+            title: "No",
+            dataIndex: "no",
+            key: "no",
+            width: 60,
+        },
+        {
+            title: "Document No",
+            dataIndex: "documentno",
+            key: "documentno",
+        },
+        {
+            title: "Driver",
+            dataIndex: "drivername",
+            key: "drivername",
+        },
+        {
+            title: "Plan Time",
+            dataIndex: "plantime",
+            key: "plantime",
+            render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
+        },
+    ];
+
+    // ================== ROW SELECTION (PARENT) ==================
     const rowSelection = {
         selectedRowKeys,
-        onChange: (selectedKeys, selectedRows) => {
-            setSelectedRowKeys(selectedKeys);
-            setSelectedRows(selectedRows);
+        onChange: (newSelectedKeys, newSelectedRows) => {
+            setSelectedRowKeys(newSelectedKeys);
+            setSelectedGroupRows(newSelectedRows);
         },
     };
 
-    // ================== OPEN MODAL ==================
+    // ================== EXPANDED RENDER ==================
+    const expandedRowRender = (record) => {
+        return (
+            <div style={{ padding: '8px 40px', margin: 0, backgroundColor: '#fafafa' }}>
+                <Table
+                    columns={childColumns}
+                    dataSource={record.items}
+                    pagination={false}
+                    size="small"
+                    bordered
+                />
+            </div>
+        );
+    };
+
+    // ================== HANDOVER LOGIC ==================
     const openHandoverModal = () => {
-        if (selectedRows.length === 0) {
-            message.warning("Pilih minimal 1 row.");
+        if (selectedGroupRows.length === 0) {
+            message.warning("Pilih minimal 1 Grup SPP.");
             return;
         }
         setIsModalOpen(true);
     };
 
-    // ================== SUBMIT TO BACKEND ==================
     const handleSubmit = async () => {
         try {
-            if (selectedRows.length === 0) {
-                message.error("Tidak ada data yang dipilih.");
+            // Ambil semua item detail dari grup yang dipilih
+            const allItems = getAllSelectedItems();
+
+            if (allItems.length === 0) {
+                message.error("Tidak ada data item yang terpilih.");
                 return;
             }
 
-            // Ambil nilai driverBy dan tnkbId dari row pertama
-            const firstDriver = selectedRows[0].driverby;
-            const firstTnkb = selectedRows[0].tnkb_id;
+            const firstDriver = allItems[0].driverby;
+            const firstTnkb = allItems[0].tnkb_id;
 
-            // Cek apakah semua row punya driverBy yang sama
-            const validDriver = selectedRows.every(row => row.driverby === firstDriver);
-
-            // Cek apakah semua row punya tnkbId yang sama
-            const validTnkb = selectedRows.every(row => row.tnkb_id === firstTnkb);
+            // Validasi: semua item harus punya driver & tnkb yang sama
+            const validDriver = allItems.every(row => row.driverby === firstDriver);
+            const validTnkb = allItems.every(row => row.tnkb_id === firstTnkb);
 
             if (!validDriver) {
-                message.error("Semua data yang dipilih harus memiliki driverBy yang sama!");
+                message.error("Semua dokumen dalam grup yang dipilih harus memiliki driverBy yang sama!");
+                return;
+            }
+            if (!validTnkb) {
+                message.error("Semua dokumen dalam grup yang dipilih harus memiliki tnkbId yang sama!");
                 return;
             }
 
-            if (!validTnkb) {
-                message.error("Semua data yang dipilih harus memiliki tnkbId yang sama!");
-                return;
-            }
+            const firstSPPNo = allItems[0].sppno;
+
             const payload = {
+                sppNo: firstSPPNo,
                 driverId: Number(firstDriver),
                 tnkbId: Number(firstTnkb),
-                data: selectedRows,
+                data: allItems, // Kirim flat array item ke backend
             };
 
-            console.log(JSON.stringify(payload));
+            console.log('payload : ', payload);
 
 
             const resp = await fetch(`${backEndUrl}/handover/process/mkt/to/fat`, {
@@ -283,9 +286,8 @@ export default function MKTToFAT() {
 
             const json = await resp.json();
 
-
-            if (json.data.insertedCount <= 0) {
-                message.error("Submit gagal.");
+            if (json.data && json.data.insertedCount <= 0) {
+                message.error("Submit gagal atau tidak ada data berubah.");
                 return;
             }
 
@@ -293,7 +295,7 @@ export default function MKTToFAT() {
 
             setIsModalOpen(false);
             setSelectedRowKeys([]);
-            setSelectedRows([]);
+            setSelectedGroupRows([]);
 
             fetchData();
         } catch (err) {
@@ -302,101 +304,64 @@ export default function MKTToFAT() {
         }
     };
 
+    // Helper untuk cek apakah tombol handover harus disable
+    const isHandoverDisabled = () => {
+        if (selectedGroupRows.length === 0) return true;
+        // Cek jika ada salah satu item di dalam grup yang belum punya sppno
+        const allItems = getAllSelectedItems();
+        return allItems.some(i => !i.sppno);
+    };
+
     return (
-        <>
-            <LayoutGlobal>
-                <Table
-                    rowSelection={rowSelection}
-                    columns={columns}
-                    dataSource={tableData}
-                    bordered
-                    loading={loading}
-                    pagination={{
-                        ...pagination,
-                        total: tableData.length,
-                        onChange: (page, pageSize) => {
-                            setPagination({ current: page, pageSize });
-                        }
-                    }}
-                />
+        <LayoutGlobal>
+            {/* TABEL UTAMA (PARENT) dengan SELECTION */}
+            <Table
+                rowSelection={rowSelection}
+                columns={parentColumns}
+                dataSource={groupedData}
+                loading={loading}
+                bordered
+                pagination={{ pageSize: 10 }}
+                expandable={{
+                    expandedRowRender: expandedRowRender,
+                }}
+            />
 
-                {/* BUTTON HANDOVER */}
-                <div style={{ marginTop: 16 }}>
-                    <Button
-                        type="primary"
-                        disabled={selectedRows.length === 0 ||
-                            selectedRows.some(row => !row.sppno)}
-                        onClick={openHandoverModal}
-                    >
-                        Handover
-                    </Button>
+            {/* BUTTON HANDOVER */}
+            <div style={{ marginTop: 16 }}>
+                <Button
+                    type="primary"
+                    disabled={isHandoverDisabled()}
+                    onClick={openHandoverModal}
+                >
+                    Handover ({getAllSelectedItems().length} Dokumen dari {selectedGroupRows.length} SPP)
+                </Button>
+            </div>
+
+            {/* MODAL CONFIRMATION HANDOVER */}
+            <Modal
+                title="Confirm Handover"
+                open={isModalOpen}
+                onCancel={() => setIsModalOpen(false)}
+                onOk={handleSubmit}
+                okText="Submit"
+                cancelText="Cancel"
+                width={600}
+            >
+                <p>Apakah Anda yakin ingin submit dokumen dari Grup SPP berikut?</p>
+                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    {selectedGroupRows.map((group) => (
+                        <div key={group.key} style={{ marginBottom: 10, borderBottom: '1px solid #eee', paddingBottom: 5 }}>
+                            <strong>SPP: {group.sppno || "No SPP"}</strong>
+                            <ul style={{ paddingLeft: 20, margin: 0 }}>
+                                {group.items.map(item => (
+                                    <li key={item.key}>{item.documentno}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    ))}
                 </div>
-
-                {/* MODAL CONFIRMATION */}
-                <Modal
-                    title="Confirm Handover"
-                    open={isModalOpen}
-                    onCancel={() => setIsModalOpen(false)}
-                    onOk={handleSubmit}
-                    okText="Submit"
-                    cancelText="Cancel"
-                >
-                    <p>Apakah Anda yakin ingin submit berikut:</p>
-
-                    <ul>
-                        {selectedRows.map((r) => (
-                            <li key={r.key}>{r.documentno}</li>
-                        ))}
-                    </ul>
-                </Modal>
-
-                <Modal
-                    title={`Isi SPPNO untuk ${editingRow?.documentno}`}
-                    open={isSppModalOpen}
-                    onCancel={() => setIsSppModalOpen(false)}
-                    onOk={async () => {
-                        if (!sppInputValue.trim()) {
-                            message.error("SPPNO tidak boleh kosong");
-                            return;
-                        }
-
-                        try {
-                            const resp = await fetch(`${backEndUrl}/tms/update-sppno`, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                    m_inout_id: editingRow.m_inout_id,
-                                    sppno: sppInputValue.trim()
-                                }),
-                                credentials: "include"
-                            });
-
-                            const json = await resp.json();
-
-                            if (!json.success) {
-                                message.error(json.message || "Gagal update SPPNO");
-                                return;
-                            }
-
-                            message.success("SPPNO berhasil diupdate!");
-
-                            setIsSppModalOpen(false);
-                            fetchData(); // refresh tabel
-
-                        } catch (error) {
-                            console.error(error);
-                            message.error("Server error");
-                        }
-                    }}
-                >
-                    <Input
-                        placeholder="Masukkan SPPNO"
-                        value={sppInputValue}
-                        onChange={(e) => setSppInputValue(e.target.value)}
-                    />
-                </Modal>
-
-            </LayoutGlobal>
-        </>
+            </Modal>
+        </LayoutGlobal>
     );
 }

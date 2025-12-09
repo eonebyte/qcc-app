@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Button, Input, Space, Table, Modal, message, Switch } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined, SendOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
@@ -146,7 +146,7 @@ export default function DPKToDelivery() {
             dataIndex: "plantime",
             key: "plantime",
             ...getColumnSearchProps("plantime"),
-            render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
+            render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-',
         },
     ];
 
@@ -288,11 +288,13 @@ export default function DPKToDelivery() {
                 {/* BUTTON HANDOVER */}
                 <div style={{ marginTop: 16 }}>
                     <Button
+                        style={{ margin: 15 }}
                         type="primary"
                         disabled={selectedRows.length === 0}
                         onClick={openHandoverModal}
+                        icon={<SendOutlined />}
                     >
-                        Handover
+                        Handover {selectedRows.length > 0 ? `(${selectedRows.length})` : ''}
                     </Button>
                 </div>
 

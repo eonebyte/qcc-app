@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CloseOutlined } from '@ant-design/icons';
-import { Button, Checkbox, Modal, Table, Typography, notification } from 'antd';
+import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { Button, Checkbox, Modal, Popover, Table, Typography, notification } from 'antd';
 import axios from 'axios';
 import { DateTime } from 'luxon';
 import LayoutGlobal from '../../../components/layouts/LayoutGlobal';
@@ -38,6 +38,9 @@ const DeliveryFromDPK = () => {
                         .map(shipment => ({
                             ...shipment,
                             key: shipment.m_inout_id,
+                            checked: false,
+                            clickCount: 0,
+                            bundleNo: bundle.bundleNo,
                             arrived: false,
                         }))
                         .filter(shipment => {
@@ -66,6 +69,47 @@ const DeliveryFromDPK = () => {
             setLoading(false);
         }
     };
+
+    const handleShipmentCheckChange = (bundleNo, shipmentKey, checked) => {
+        setData(prevData =>
+            prevData.map(bundle => {
+                if (bundle.bundleNo === bundleNo) {
+                    const updatedShipments = bundle.shipments.map(shipment => {
+                        if (shipment.key === shipmentKey) {
+                            return { ...shipment, checked };
+                        }
+                        return shipment;
+                    });
+                    return { ...bundle, shipments: updatedShipments };
+                }
+                return bundle;
+            })
+        );
+    };
+
+    const handleShipmentClickCount = (bundleNo, shipmentKey) => {
+        setData(prevData =>
+            prevData.map(bundle => {
+                if (bundle.bundleNo === bundleNo) {
+                    const updatedShipments = bundle.shipments.map(shipment => {
+                        if (shipment.key === shipmentKey) {
+                            let newClickCount = shipment.clickCount + 1;
+                            let newChecked = shipment.checked;
+                            if (newClickCount >= 3) {
+                                newChecked = false; // reset checked setelah 3 klik
+                                newClickCount = 0;  // reset counter
+                            }
+                            return { ...shipment, checked: newChecked, clickCount: newClickCount };
+                        }
+                        return shipment;
+                    });
+                    return { ...bundle, shipments: updatedShipments };
+                }
+                return bundle;
+            })
+        );
+    };
+
 
     const handleBundleSelectionChange = (bundleNo, checked) => {
         setData(prevData =>
@@ -107,7 +151,21 @@ const DeliveryFromDPK = () => {
 
         setIsSubmitting(true);
         try {
-            const payload = { data: selectedBundlesForSubmit };
+
+            const filteredBundles = selectedBundlesForSubmit.map(bundle => ({
+                ...bundle,
+                shipments: bundle.shipments.filter(s => s.checked)
+            }))
+                // Hanya kirim bundle yang masih punya shipment setelah filter
+                .filter(bundle => bundle.shipments.length > 0);
+
+            if (filteredBundles.length === 0) {
+                notification.warning({ message: 'Tidak ada data untuk dikirim', description: 'Semua shipment tidak dicentang.' });
+                setIsSubmitting(false);
+                return;
+            }
+
+            const payload = { data: filteredBundles };
 
             console.log('New Payload:', payload);
 
@@ -142,7 +200,12 @@ const DeliveryFromDPK = () => {
 
             if (res.data.success) {
                 notification.success({ message: 'Info', description: `Dokumen ${itemToReject.documentno} akan diproses untuk direject.` });
-                fetchData();
+                setData(prevData =>
+                    prevData.map(bundle => ({
+                        ...bundle,
+                        shipments: bundle.shipments.filter(s => s.m_inout_id !== itemToReject.m_inout_id)
+                    }))
+                );
             } else {
                 notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
             }
@@ -162,11 +225,38 @@ const DeliveryFromDPK = () => {
 
     const shipmentColumns = () => {
         return [
+            {
+                title: (
+                    <Popover content={<div><span>Klik checked 3 untuk melakukan uncheck</span></div>}>
+                        <span style={{ cursor: 'pointer' }}>Check</span>
+                    </Popover>
+                ),
+                key: 'action', width: 50, render: (_, record) => {
+                    if (record.checked) {
+                        return (
+                            <span
+                                style={{ color: '#389e0d', cursor: 'pointer' }}
+                                onClick={() => handleShipmentClickCount(record.bundleNo, record.key)}
+                            >
+                                Checked
+                            </span>
+
+                        );
+                    } else {
+                        return (
+                            <Button onClick={() => handleShipmentCheckChange(record.bundleNo, record.key, true)} icon={<CheckOutlined />} size='small' type="default"></Button>
+                        )
+                    }
+                }
+            },
             { title: 'Document No', dataIndex: 'documentno', key: 'documentno' },
             { title: 'Customer', dataIndex: 'customer', key: 'customer' },
-            { title: 'From', dataIndex: 'to', key: 'to', width: 80, align: 'center' },
+            { title: 'Driver', dataIndex: 'drivername', key: 'drivername' },
             { title: 'Plan Time', dataIndex: 'plantime', key: 'plantime', render: (text) => text ? DateTime.fromISO(text).toFormat('dd-MM-yyyy HH:mm') : 'N/A' },
-            { title: 'Action', key: 'action', width: 100, render: (_, record) => <Button onClick={() => showModalReject(record)} icon={<CloseOutlined />} size='small' danger>Reject</Button> }
+            {
+                title: 'Action', key: 'action', width: 100,
+                render: (_, record) => <Button onClick={() => showModalReject(record)} icon={<CloseOutlined />} size='small' danger>Reject</Button>
+            }
         ];
     };
 
@@ -174,13 +264,17 @@ const DeliveryFromDPK = () => {
         {
             title: '', key: 'selection', width: 50, align: 'center',
             render: (_, record) => {
+                const allChecked = record.shipments.length > 0 && record.shipments.every(s => s.checked);
                 const isSelected = record.shipments.length > 0 && record.shipments.every(s => s.arrived);
-                return <Checkbox checked={isSelected} onChange={(e) => handleBundleSelectionChange(record.bundleNo, e.target.checked)} />;
+                return <Checkbox checked={isSelected}
+                    onChange={(e) => handleBundleSelectionChange(record.bundleNo, e.target.checked)}
+                    disabled={!allChecked}
+                />;
             },
         },
         { title: 'No', key: 'no', width: 70, align: 'center', render: (_, __, index) => ((pagination.current - 1) * pagination.pageSize) + index + 1 },
         { title: 'Bundle No', dataIndex: 'bundleNo', key: 'bundleNo' },
-        { title: 'Created Date', dataIndex: 'created', key: 'created', render: (text) => DateTime.fromISO(text).toFormat('dd-MM-yyyy HH:mm:ss') },
+        { title: 'Date Handover', dataIndex: 'created', key: 'created', render: (text) => DateTime.fromISO(text).plus({ hours: 7 }).toFormat('dd-MM-yyyy HH:mm:ss') },
         { title: 'Total Shipments', dataIndex: 'shipments', key: 'shipments_count', align: 'center', render: (shipments) => shipments.length }
     ];
 

@@ -166,7 +166,7 @@ export default function DPKToDriver() {
             dataIndex: "plantime",
             key: "plantime",
             ...getColumnSearchProps("plantime"),
-            render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
+            render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-',
         },
         {
             title: "Actions",
@@ -393,11 +393,12 @@ export default function DPKToDriver() {
             {/* BUTTON HANDOVER */}
             <div style={{ marginTop: 16 }}>
                 <Button
+                style={{margin: 15}}
                     type="primary"
                     disabled={selectedRows.length === 0}
                     onClick={openHandoverModal}
                 >
-                    Handover
+                    Handover {selectedRows.length > 0 ? `(${selectedRows.length})` : ''}
                 </Button>
             </div>
 

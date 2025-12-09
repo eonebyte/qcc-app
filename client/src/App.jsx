@@ -16,8 +16,8 @@ import DeliveryToDPK from './pages/tms/Handover/DeliveryToDPK';
 import DPKFromDelivery from './pages/tms/Receipt/DPKFromDelivery';
 import DPKToDriver from './pages/tms/Handover/DPKToDriver';
 import DriverFromDPK from './pages/tms/Receipt/DriverFromDPK';
-import CheckInCustomer from './pages/tms/Handover/CheckInRoundTrip';
-import CheckIn from './pages/tms/Handover/CheckIn';
+import CheckInCustomer from './pages/tms/Handover/CheckInRoundTrip_archive';
+import CheckOut from './pages/tms/Handover/CheckOut';
 import DPKFromDriver from './pages/tms/Receipt/DPKFromDriver';
 import DPKToDelivery from './pages/tms/Handover/DPKToDelivery';
 import DeliveryFromDPK from './pages/tms/Receipt/DeliveryFromDPK';
@@ -26,6 +26,7 @@ import MKTFromDelivery from './pages/tms/Receipt/MKTFromDelivery';
 import MKTToFAT from './pages/tms/Handover/MKTToFAT';
 import FATFromMKT from './pages/tms/Receipt/FATFromMKT';
 import SettingConfig from './pages/tms/SettingConfig';
+import DropOnly from './pages/tms/DropOnly';
 
 function App() {
   const dispatch = useDispatch();
@@ -65,7 +66,8 @@ function App() {
       <Route path="/handover/dpk/to/driver" element={<DPKToDriver />} />
       <Route path="/receipt/driver/from/dpk" element={<DriverFromDPK />} />
 
-      <Route path="/handover/checkin/customer" element={<CheckIn />} />
+      <Route path="/handover/checkin/customer" element={<CheckOut />} />
+      <Route path="/handover/checkout/droponly" element={<DropOnly />} />
       <Route path="/receipt/dpk/from/driver" element={<DPKFromDriver />} />
 
       <Route path="/handover/dpk/to/delivery" element={<DPKToDelivery />} />

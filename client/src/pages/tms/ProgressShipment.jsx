@@ -187,7 +187,7 @@ const ProgressShipment = () => {
         });
     };
 
-    const fetchData = async (current = 1, pageSize = 10, dateRangeParam = dateRange) => {
+    const fetchData = async (current = 1, pageSize = 10, dateRangeParam = dateRange, filters = {}) => {
         setLoading(true);
 
         const startDate = dateRangeParam?.[0]
@@ -196,10 +196,13 @@ const ProgressShipment = () => {
         const endDate = dateRangeParam?.[1]
             ? dateRangeParam[1].format("YYYY-MM-DD")
             : "";
+
+        const searchParam = new URLSearchParams(filters).toString();
+
         try {
 
             const res = await fetch(
-                `${backEndUrl}/tms/history?page=${current}&limit=${pageSize}&startDate=${startDate}&endDate=${endDate}`,
+                `${backEndUrl}/tms/history?page=${current}&limit=${pageSize}&startDate=${startDate}&endDate=${endDate}&${searchParam}`,
                 { credentials: "include", }
             );
             if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -346,10 +349,14 @@ const ProgressShipment = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const handleSearch = (selectedKeys, confirm, dataIndex) => {
+    const handleSearch = async (selectedKeys, confirm, dataIndex) => {
         confirm();
         setSearchText(selectedKeys[0]);
         setSearchedColumn(dataIndex);
+
+        await fetchData(1, pagination.pageSize, dateRange, {
+            [dataIndex]: selectedKeys[0]
+        });
     };
 
     const handleReset = (clearFilters) => {

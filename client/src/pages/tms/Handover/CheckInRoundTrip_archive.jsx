@@ -167,7 +167,7 @@ export default function CheckInRoundTrip() {
             dataIndex: "plantime",
             key: "plantime",
             ...getColumnSearchProps("plantime"),
-            render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
+            render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-',
         },
         {
             title: "Actions",
@@ -380,7 +380,7 @@ export default function CheckInRoundTrip() {
                     disabled={selectedRows.length === 0}
                     onClick={openHandoverModal}
                 >
-                    Check In
+                    Check Out
                 </Button>
             </div>
 

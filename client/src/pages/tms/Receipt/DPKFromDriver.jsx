@@ -4,13 +4,13 @@ import { Button, Checkbox, Modal, Table, Typography, notification } from 'antd';
 import axios from 'axios';
 import { DateTime } from 'luxon';
 import LayoutGlobal from '../../../components/layouts/LayoutGlobal';
-import { useSelector } from 'react-redux';
+// import { useSelector } from 'react-redux';
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
 
 const DPKFromDriver = () => {
-    const user = useSelector((state) => state.auth.user);
-    const userId = user.ad_user_id;
+    // const user = useSelector((state) => state.auth.user);
+    // const userId = user.ad_user_id;
 
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -40,12 +40,12 @@ const DPKFromDriver = () => {
                             key: shipment.m_inout_id,
                             arrived: false,
                         }))
-                        .filter(shipment => {
-                            if (Number(shipment.checkpoin_id) === 4) {
-                                return shipment.driverby === userId;
-                            }
-                            return true;
-                        });
+                        // .filter(shipment => {
+                        //     if (Number(shipment.checkpoin_id) === 4) {
+                        //         return shipment.driverby === userId;
+                        //     }
+                        //     return true;
+                        // });
 
                     return {
                         ...bundle,
@@ -164,7 +164,6 @@ const DPKFromDriver = () => {
         return [
             { title: 'Document No', dataIndex: 'documentno', key: 'documentno' },
             { title: 'Customer', dataIndex: 'customer', key: 'customer' },
-            { title: 'From', dataIndex: 'to', key: 'to', width: 80, align: 'center' },
             { title: 'Plan Time', dataIndex: 'plantime', key: 'plantime', render: (text) => text ? DateTime.fromISO(text).toFormat('dd-MM-yyyy HH:mm') : 'N/A' },
             { title: 'Action', key: 'action', width: 100, render: (_, record) => <Button onClick={() => showModalReject(record)} icon={<CloseOutlined />} size='small' danger>Reject</Button> }
         ];
@@ -180,8 +179,8 @@ const DPKFromDriver = () => {
         },
         { title: 'No', key: 'no', width: 70, align: 'center', render: (_, __, index) => ((pagination.current - 1) * pagination.pageSize) + index + 1 },
         { title: 'Bundle No', dataIndex: 'bundleNo', key: 'bundleNo' },
-        { title: 'Driver By', dataIndex: 'driver', key: 'driver' },
-        { title: 'Created Date', dataIndex: 'created', key: 'created', render: (text) => DateTime.fromISO(text).toFormat('dd-MM-yyyy HH:mm:ss') },
+        { title: 'Driver', dataIndex: 'drivername', key: 'drivername' },
+        { title: 'Date Handover', dataIndex: 'created', key: 'created', render: (text) => DateTime.fromISO(text).plus({ hours: 7 }).toFormat('dd-MM-yyyy HH:mm:ss') },
         { title: 'Total Shipments', dataIndex: 'shipments', key: 'shipments_count', align: 'center', render: (shipments) => shipments.length }
     ];
 

@@ -807,7 +807,6 @@ class Handover {
         try {
             await dbClient.query('BEGIN');
 
-            let result;
 
             const { data, driverName, tnkbId, tripMode } = payload;
 
@@ -815,201 +814,157 @@ class Handover {
                 throw { statusCode: 400, message: 'Data is required for handover.' };
             }
 
-            const mode = tripMode === "DO" ? "DO" : "RT";
+            const DO_items = data.filter(item => item.tripMode === "DO");
+            const RT_items = data.filter(item => item.tripMode !== "DO"); // 
 
-
-            const inoutIds = data.map(item => item.m_inout_id);
-
-            if (mode === "DO") {
+            // DO
+            if (DO_items.length > 0) {
+                const doIds = DO_items.map(item => item.m_inout_id);
 
                 const updateTripMode = `
                 UPDATE adw_trackingsj
                 SET trip_mode = 'DO',
                     updated = NOW()
                 WHERE m_inout_id = ANY($1::int[])
-                RETURNING adw_trackingsj_id, m_inout_id, trip_mode;
+                RETURNING adw_trackingsj_id, m_inout_id;
             `;
 
-                const res = await dbClient.query(updateTripMode, [
-                    inoutIds
-                ]);
+                const res = await dbClient.query(updateTripMode, [doIds]);
 
                 const insertEventQuery = `
-                    INSERT INTO adw_trackingsj_events(
-                        ad_client_id, ad_org_id, username,
-                        adw_event_type, adw_from_actor, adw_to_actor,
-                        adw_trackingsj_id, created, isactive,
-                        updated, checkpoin_id
-                    ) VALUES 
-                    (
-                        1000003, 1000003, $1,
-                        'HANDOVER', $2, $3,
-                        $4, NOW(), 'Y',
-                        NOW(), $5
-                    ),
-                    (
-                        1000003, 1000003, $1,
-                        'ACCEPTANCE', $2, $3,
-                        $4, NOW(), 'Y',
-                        NOW(), $5
-                    )
-                `;
+                INSERT INTO adw_trackingsj_events(
+                    ad_client_id, ad_org_id, username,
+                    adw_event_type, adw_from_actor, adw_to_actor,
+                    adw_trackingsj_id, created, isactive,
+                    updated, checkpoin_id
+                ) VALUES 
+                (
+                    1000003, 1000003, $1,
+                    'HANDOVER', $2, $3,
+                    $4, NOW(), 'Y',
+                    NOW(), $5
+                ),
+                (
+                    1000003, 1000003, $1,
+                    'ACCEPTANCE', $2, $3,
+                    $4, NOW(), 'Y',
+                    NOW(), $5
+                )
+            `;
 
-                // 🔥 Insert event per trackingId
                 for (const row of res.rows) {
-                    const trackingId = row.adw_trackingsj_id;
-
                     await dbClient.query(insertEventQuery, [
                         userName,
                         'Driver',
                         'Customer',
-                        trackingId,
+                        row.adw_trackingsj_id,
                         '5'
                     ]);
                 }
+            }
 
-                await dbClient.query('COMMIT');
 
-                return {
-                    updatedCount: res.rows.length,
-                    message: `Trip mode DO updated for ${res.rows.length} SJ`
+
+
+            let result = {};
+
+            if (RT_items.length > 0) {
+                const inoutIds = RT_items.map(item => item.m_inout_id);
+
+                const seqRow = await dbClient.query(`SELECT nextval('adw_handover_group_seq') AS seq`);
+                const seq = seqRow.rows[0].seq;
+
+                const yymm = new Date().toISOString().slice(2, 7).replace("-", "");
+                const documentno = `HIDT${yymm}${String(seq).padStart(4, "0")}`;
+
+                const insertGroupQuery = `
+                INSERT INTO adw_handover_group (
+                    createdby, documentno, checkpoint, notes, drivername, tnkb_id
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING adw_handover_group_id;
+            `;
+
+                const groupRes = await dbClient.query(insertGroupQuery, [
+                    0,
+                    documentno,
+                    '6',
+                    'handover driver ke dpk',
+                    driverName,
+                    tnkbId
+                ]);
+
+                const groupId = groupRes.rows[0].adw_handover_group_id;
+
+                // Update trip_mode = RT
+                const updateQuery = `
+                UPDATE adw_trackingsj 
+                SET checkpoin_id = $1, updated = NOW(), trip_mode = 'RT'
+                WHERE m_inout_id = ANY($2::integer[]) AND checkpoin_id = $3
+                RETURNING adw_trackingsj_id, m_inout_id;
+            `;
+
+                const updateResult = await dbClient.query(updateQuery, [
+                    '6',
+                    inoutIds,
+                    '5'
+                ]);
+
+                const updatedTracking = updateResult.rows;
+
+                const eventDriverToCustQuery = `
+                INSERT INTO adw_trackingsj_events(
+                    ad_client_id, ad_org_id, username,
+                    adw_event_type, adw_from_actor, adw_to_actor,
+                    adw_trackingsj_id, created, isactive,
+                    updated, checkpoin_id
+                ) VALUES 
+                (
+                    1000003, 1000003, $1,
+                    'HANDOVER', 'Driver', 'Customer',
+                    $2, NOW(), 'Y', NOW(), $3
+                ),
+                (
+                    1000003, 1000003, $1,
+                    'ACCEPTANCE', 'Driver', 'Customer',
+                    $2, NOW(), 'Y', NOW(), $3
+                );
+            `;
+
+                const eventDriverToDPKQuery = `
+                INSERT INTO adw_trackingsj_events(
+                    ad_client_id, ad_org_id, username,
+                    adw_event_type, adw_from_actor, adw_to_actor,
+                    adw_trackingsj_id, created, isactive,
+                    updated, checkpoin_id
+                ) VALUES (
+                    1000003, 1000003, $1,
+                    'HANDOVER', 'Driver', 'DPK',
+                    $2, NOW(), 'Y', NOW(), $3
+                );
+            `;
+
+                const insertPivotQuery = `
+                INSERT INTO adw_group_sj (
+                    adw_handover_group_id, adw_trackingsj_id, checkpoint
+                ) VALUES ($1, $2, $3);
+            `;
+
+                for (const row of updatedTracking) {
+                    const trackingId = row.adw_trackingsj_id;
+
+                    await dbClient.query(insertPivotQuery, [groupId, trackingId, '5']);
+                    await dbClient.query(eventDriverToCustQuery, [userName, trackingId, '5']);
+                    await dbClient.query(eventDriverToDPKQuery, [userName, trackingId, '5']);
+                }
+
+                result = {
+                    handover_group_id: groupId,
+                    documentno,
+                    updatedRT: updatedTracking.length,
+                    updatedDO: DO_items.length,
+                    message: `RT: ${updatedTracking.length}, DO: ${DO_items.length}`
                 };
             }
-
-            const seqRow = await dbClient.query(`
-            SELECT nextval('adw_handover_group_seq') AS seq
-            `);
-            const seq = seqRow.rows[0].seq;
-
-            const yymm = new Date().toISOString().slice(2, 7).replace("-", "");
-            const documentno = `HIDT${yymm}${String(seq).padStart(4, "0")}`;
-
-            const insertGroupQuery = `
-            INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes, drivername, tnkb_id
-            ) VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING adw_handover_group_id;
-        `;
-
-            const groupRes = await dbClient.query(insertGroupQuery, [
-                0,
-                documentno,
-                '6',
-                'handover driver ke dpk',
-                driverName,
-                tnkbId
-            ]);
-
-            const groupId = groupRes.rows[0].adw_handover_group_id;
-            if (!groupId) throw new Error("Failed to insert handover group");
-
-            // ============================================================
-            // 2️⃣ UPDATE adw_trackingsj (checkpoint 3 → 4)
-            // ============================================================
-
-            const updateQuery = `
-            UPDATE adw_trackingsj 
-            SET
-                checkpoin_id = $1,
-                updated = NOW(),
-                trip_mode = 'RT'
-            WHERE 
-                m_inout_id = ANY($2::integer[])
-                AND checkpoin_id = $3
-            RETURNING adw_trackingsj_id, m_inout_id;
-        `;
-
-            const updateValues = [
-                '6',        // pindah checkpoint ke 6
-                inoutIds,
-                '5'         // hanya checkpoint 5
-            ];
-
-            const updateResult = await dbClient.query(updateQuery, updateValues);
-
-            if (updateResult.rows.length === 0) {
-                throw new Error('No items updated — wrong checkpoint or already processed.');
-            }
-
-            const updatedTracking = updateResult.rows;
-
-            const eventDriverToCustQuery = `
-            INSERT INTO adw_trackingsj_events(
-                ad_client_id, ad_org_id, username,
-                adw_event_type, adw_from_actor, adw_to_actor,
-                adw_trackingsj_id, created, isactive,
-                updated, checkpoin_id
-            ) VALUES 
-            (
-                1000003, 1000003, $1,
-                'HANDOVER', 'Driver', 'Customer',
-                $2, NOW(), 'Y',
-                NOW(), $3
-            ),
-            (
-                1000003, 1000003, $1,
-                'ACCEPTANCE', 'Driver', 'Customer',
-                $2, NOW(), 'Y',
-                NOW(), $3
-            )
-        `;
-
-            // Query B: Driver ke DPK (Handover saja)
-            const eventDriverToDPKQuery = `
-            INSERT INTO adw_trackingsj_events(
-                ad_client_id, ad_org_id, username,
-                adw_event_type, adw_from_actor, adw_to_actor,
-                adw_trackingsj_id, created, isactive,
-                updated, checkpoin_id
-            ) VALUES (
-                1000003, 1000003, $1,
-                'HANDOVER', 'Driver', 'DPK',
-                $2, NOW(), 'Y',
-                NOW(), $3
-            );
-        `;
-
-            const insertPivotQuery = `
-            INSERT INTO adw_group_sj (
-                adw_handover_group_id, adw_trackingsj_id, checkpoint
-            ) VALUES ($1, $2, $3);
-        `;
-
-
-            for (const row of updatedTracking) {
-                const trackingId = row.adw_trackingsj_id;
-
-                // 3.1 Insert ke Pivot
-                await dbClient.query(insertPivotQuery, [
-                    groupId,
-                    trackingId,
-                    '5'
-                ]);
-
-                // 3.2 Insert Event: Driver -> Customer (Handover & Acceptance)
-                // Logika: Menyelesaikan urusan dengan customer dulu (barang diterima/ditolak/kembali)
-                await dbClient.query(eventDriverToCustQuery, [
-                    userName,
-                    trackingId,
-                    '5'
-                ]);
-
-                // 3.3 Insert Event: Driver -> DPK (Handover)
-                // Logika: Setelah urusan customer selesai, driver menyerahkan bukti/sisa ke DPK
-                await dbClient.query(eventDriverToDPKQuery, [
-                    userName,
-                    trackingId,
-                    '5'
-                ]);
-            }
-
-
-            result = {
-                handover_group_id: groupId,
-                documentno,
-                updatedCount: updatedTracking.length,
-                message: `Successfully handed over ${updatedTracking.length} SJ to Driver`
-            };
 
             await dbClient.query('COMMIT');
             return result;
@@ -1677,7 +1632,7 @@ class Handover {
             // -----------------------------------------------------------
             // Kita cari barang yang MEMANG sedang di Checkpoint 6
             const queryPostgres = `
-            SELECT m_inout_id, checkpoin_id, driverby, tnkb_id 
+            SELECT m_inout_id, checkpoin_id, driverby, tnkb_id, drivername 
             FROM adw_trackingsj 
             WHERE checkpoin_id = '11'
         `;
@@ -1741,6 +1696,7 @@ class Handover {
                     checkpoin_id: 9,
                     driverby: pgInfo.driverby || null,
                     tnkb_id: pgInfo.tnkb_id || null,
+                    drivername: pgInfo.drivername || null,
                 };
             });
 
@@ -1771,7 +1727,7 @@ class Handover {
 
             let result;
 
-            const { data, driverId, tnkbId } = payload;
+            const { sppNo, data, driverId, tnkbId } = payload;
 
             if (!data || !Array.isArray(data) || data.length === 0) {
                 throw { statusCode: 400, message: 'Data is required for handover.' };
@@ -1791,8 +1747,8 @@ class Handover {
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes, driverby, tnkb_id
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                createdby, documentno, checkpoint, notes, driverby, tnkb_id, sppno
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING adw_handover_group_id;
         `;
 
@@ -1802,7 +1758,8 @@ class Handover {
                 '12',
                 'handover mkt ke fat',
                 driverId,
-                tnkbId
+                tnkbId,
+                sppNo
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;

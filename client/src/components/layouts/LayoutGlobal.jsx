@@ -96,7 +96,12 @@ const items = [
             },
             {
                 key: '/handover/checkin/customer',
-                label: 'Check In Customer',
+                label: 'Check Out',
+                roles: ['driver']
+            },
+            {
+                key: '/handover/checkout/droponly',
+                label: 'Drop Only',
                 roles: ['driver']
             },
             {

@@ -254,10 +254,13 @@ export default function CheckInDropOnly() {
                 return;
             }
             const payload = {
-                driverId: firstDriver,
+                driverName: firstDriver,
                 tnkbId: Number(firstTnkb),
                 data: selectedRows,
             };
+
+            console.log('payload : ', payload);
+
 
             const resp = await fetch(`${backEndUrl}/handover/process/driver/to/customer/do`, {
                 method: "POST",

@@ -180,7 +180,7 @@ const DriverFromDPK = () => {
         },
         { title: 'No', key: 'no', width: 70, align: 'center', render: (_, __, index) => ((pagination.current - 1) * pagination.pageSize) + index + 1 },
         { title: 'Bundle No', dataIndex: 'bundleNo', key: 'bundleNo' },
-        { title: 'Created Date', dataIndex: 'created', key: 'created', render: (text) => DateTime.fromISO(text).toFormat('dd-MM-yyyy HH:mm:ss') },
+        { title: 'Date Handover', dataIndex: 'created', key: 'created', render: (text) => DateTime.fromISO(text).plus({ hours: 7 }).toFormat('dd-MM-yyyy HH:mm:ss') },
         { title: 'Total Shipments', dataIndex: 'shipments', key: 'shipments_count', align: 'center', render: (shipments) => shipments.length }
     ];
 
