@@ -2419,6 +2419,347 @@ class TMS {
         }
     }
 
+    async getHistory3(server, page, pageSize, startDate, endDate, docNo) {
+        let connection;
+        let dbClient;
+
+        try {
+            // 1. Buka koneksi parallel
+            [connection, dbClient] = await Promise.all([
+                oracleDB.openConnection(),
+                server.pg.connect()
+            ]);
+
+            // ==========================
+            // SETUP TANGGAL
+            // ==========================
+            let finalStartDate, finalEndDate;
+
+            if (startDate && endDate) {
+                finalStartDate = startDate;
+                finalEndDate = endDate;
+            } else {
+                const configQuery = `SELECT start_date FROM adw_trackingsj_config WHERE adw_trackingsj_config_id = 1 LIMIT 1;`;
+                const configRes = await dbClient.query(configQuery);
+                const configDate = configRes.rows.length > 0 ? configRes.rows[0].start_date : null;
+
+                if (!configDate) return { success: false, message: "Config start_date not found" };
+
+                finalStartDate = dayjs(configDate).format("YYYY-MM-DD");
+                finalEndDate = dayjs().format("YYYY-MM-DD");
+            }
+
+            const oracleStartDate = dayjs(finalStartDate).format("YYYY-MM-DD");
+            const oracleEndDate = dayjs(finalEndDate).format("YYYY-MM-DD");
+
+            // ==========================
+            // LANGKAH 1: FETCH ID & SKOR DARI POSTGRES (RANKING LIST)
+            // ==========================
+            // Kita hitung skor berdasarkan jumlah event. Semakin banyak event, semakin tinggi skornya.
+
+            let pgDocFilter = "";
+            const pgValues = [finalStartDate, dayjs(finalEndDate).add(1, 'day').format("YYYY-MM-DD")]; // +1 day karena timestamp PG
+
+            if (docNo && docNo.trim() !== "") {
+                pgDocFilter = `AND ats.documentno ILIKE $3`;
+                pgValues.push(`%${docNo.trim()}%`);
+            }
+
+            const queryPgIds = `
+            SELECT 
+                ats.m_inout_id, 
+                COUNT(ate.adw_trackingsj_events_id) as score,
+                ats.plantime
+            FROM adw_trackingsj ats
+            LEFT JOIN adw_trackingsj_events ate ON ats.adw_trackingsj_id = ate.adw_trackingsj_id
+            WHERE ats.plantime >= $1 AND ats.plantime < $2
+            ${pgDocFilter}
+            GROUP BY ats.m_inout_id, ats.plantime
+        `;
+
+            const resultPgIds = await dbClient.query(queryPgIds, pgValues);
+
+            // Map untuk lookup cepat: m_inout_id -> score
+            const pgScoreMap = new Map();
+            resultPgIds.rows.forEach(row => {
+                pgScoreMap.set(String(row.m_inout_id), parseInt(row.score || 0));
+            });
+
+            // ==========================
+            // LANGKAH 2: FETCH SEMUA ID DARI ORACLE (MASTER LIST)
+            // ==========================
+            // Ambil hanya ID dan DocumentNo untuk sorting/filtering, ini ringan.
+
+            let oraDocFilter = "";
+            const oraBinds = {
+                startDate: oracleStartDate,
+                endDate: oracleEndDate
+            };
+
+            if (docNo && docNo.trim() !== "") {
+                oraDocFilter = ` AND mi.DOCUMENTNO LIKE '%' || :docNo || '%' `;
+                oraBinds.docNo = docNo.trim();
+            }
+
+            const queryOracleIds = `
+            SELECT 
+                mi.M_INOUT_ID,
+                mi.DOCUMENTNO,
+                mi.MOVEMENTDATE
+            FROM M_INOUT mi
+            JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID 
+            JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
+            WHERE
+                mi.DOCSTATUS = 'CO'
+                AND mi.ISSOTRX = 'Y'
+                AND mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
+                AND mi.MOVEMENTDATE < TO_DATE(:endDate, 'YYYY-MM-DD') + 1 
+                AND (mi.POREFERENCE NOT LIKE '%SAMPLE%' OR mi.POREFERENCE IS NULL)
+                AND cb.ISSUBCONTRACT = 'N'
+                AND co.ISMILKRUN = 'N'
+                ${oraDocFilter}
+        `;
+
+            const resultOracleIds = await connection.execute(queryOracleIds, oraBinds, {
+                outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT
+            });
+
+            const oracleRowsRaw = resultOracleIds.rows || [];
+
+            // ==========================
+            // LANGKAH 3: MERGE & SORTING (LOGIKA UTAMA)
+            // ==========================
+
+            const mergedList = oracleRowsRaw.map(row => {
+                const idStr = String(row.M_INOUT_ID);
+                // Cek apakah ID ini ada di Postgres?
+                const pgScore = pgScoreMap.get(idStr);
+
+                // Logika Skor:
+                // Jika ada di PG (pgScore defined), mulai dari base score 100 + jumlah event
+                // Jika tidak ada di PG, score 0
+                const finalScore = (pgScore !== undefined) ? (100 + pgScore) : 0;
+
+                return {
+                    m_inout_id: row.M_INOUT_ID,
+                    documentno: row.DOCUMENTNO,
+                    score: finalScore,
+                    date: row.MOVEMENTDATE // Backup sorting jika score sama
+                };
+            });
+
+            // SORTING:
+            // 1. Prioritas Score Tertinggi (Yang ada di PG dan event terbanyak)
+            // 2. Jika score sama, Document No Descending / Date Descending
+            mergedList.sort((a, b) => {
+                if (b.score !== a.score) {
+                    return b.score - a.score; // Descending Score
+                }
+                // Jika sama (misal sama-sama belum ada di PG), urutkan by DocumentNo Desc
+                if (a.documentno < b.documentno) return 1;
+                if (a.documentno > b.documentno) return -1;
+                return 0;
+            });
+
+            // ==========================
+            // LANGKAH 4: PAGINATION (SLICE)
+            // ==========================
+
+            const totalRows = mergedList.length;
+            const startIndex = (page - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+
+            // Ambil hanya ID yang diperlukan untuk halaman ini
+            const pagedItems = mergedList.slice(startIndex, endIndex);
+            const targetIds = pagedItems.map(item => item.m_inout_id);
+
+            if (targetIds.length === 0) {
+                return {
+                    success: true,
+                    count: 0,
+                    meta: {
+                        total: totalRows,
+                        count: 0,
+                        per_page: pageSize,
+                        current_page: page,
+                        total_pages: Math.ceil(totalRows / pageSize)
+                    },
+                    data: []
+                };
+            }
+
+            // ==========================
+            // LANGKAH 5: QUERY DETAIL BERAT (HANYA UNTUK TARGET IDS)
+            // ==========================
+
+            // 5a. Detail Oracle (Pakai IN Clause)
+            // Karena pageSize kecil (10-100), aman pakai IN (...) secara manual string injection untuk Oracle
+            const idsString = targetIds.join(',');
+            const queryOracleDetail = `
+            SELECT 
+                mi.M_INOUT_ID,
+                mi.DOCUMENTNO,
+                cb.VALUE AS CUSTOMER,
+                TO_DATE(
+                    TO_CHAR(mi.MOVEMENTDATE, 'YYYY-MM-DD') || ' ' ||
+                    TO_CHAR(mi.PLANTIME, 'HH24:MI:SS'),
+                    'YYYY-MM-DD HH24:MI:SS'
+                ) AS PLANTIME,
+                mi.ADW_TMS_ID
+            FROM M_INOUT mi
+            JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID 
+            WHERE mi.M_INOUT_ID IN (${idsString})
+        `;
+
+            const resultOracleDetail = await connection.execute(queryOracleDetail, {}, {
+                outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT
+            });
+            const oracleDetails = resultOracleDetail.rows || [];
+
+
+            // 5b. Detail Postgres (Query Complex WITH RankedEvents, tapi filter ID spesifik)
+            const queryPostgresDetail = `
+            WITH RankedEvents AS (
+                SELECT
+                    e.adw_trackingsj_id, e.ad_user_id, e.created, e.adw_event_type, e.adw_from_actor, e.adw_to_actor,
+                    ROW_NUMBER() OVER(PARTITION BY e.adw_trackingsj_id, e.adw_event_type, e.adw_from_actor, e.adw_to_actor ORDER BY e.created DESC) as rn
+                FROM adw_trackingsj_events e
+                JOIN adw_trackingsj ats_filter ON e.adw_trackingsj_id = ats_filter.adw_trackingsj_id
+                WHERE ats_filter.m_inout_id = ANY($1::int[]) -- Optimasi Filter Dini
+            ),
+            PivotedEvents AS (
+               SELECT
+                    adw_trackingsj_id,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN created END) AS ho_delivery_to_dpk,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS ho_delivery_to_dpkby,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN created END) AS accept_dpk_from_delivery,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS accept_dpk_from_deliveryby,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN created END) AS ho_dpk_to_driver,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN ad_user_id END) AS ho_dpk_to_driverby,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN created END) AS accept_driver_from_dpk,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN ad_user_id END) AS accept_driver_from_dpkby,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN created END) AS ho_driver_to_customer,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN ad_user_id END) AS ho_driver_to_customerby,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN created END) AS accept_customer_from_driver,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN ad_user_id END) AS accept_customer_from_driverby,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN created END) AS ho_driver_to_dpk,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS ho_driver_to_dpkby,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN created END) AS accept_dpk_from_driver,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS accept_dpk_from_driverby,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN created END) AS ho_dpk_to_delivery,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN ad_user_id END) AS ho_dpk_to_deliveryby,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN created END) AS accept_delivery_from_dpk,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN ad_user_id END) AS accept_delivery_from_dpkby,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN created END) AS ho_delivery_to_mkt,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN ad_user_id END) AS ho_delivery_to_mktby,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN created END) AS accept_mkt_from_delivery,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN ad_user_id END) AS accept_mkt_from_deliveryby,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN created END) AS ho_mkt_to_fat,
+                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN ad_user_id END) AS ho_mkt_to_fatby,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN created END) AS accept_fat_from_mkt,
+                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN ad_user_id END) AS accept_fat_from_mktby
+                FROM RankedEvents
+                WHERE rn = 1
+                GROUP BY adw_trackingsj_id
+            )
+            SELECT
+                ats.m_inout_id, '' AS customer, '' AS adw_tms_id, ats.documentno, ats.plantime,
+                ats.cancelrequest, ats.adw_trackingsj_id, ats.checkpoin_id,
+                pe.*,
+                user1.name AS ho_delivery_to_dpkby_name,
+                user2.name AS accept_dpk_from_deliveryby_name,
+                user3.name AS ho_dpk_to_driverby_name,
+                user4.name AS accept_driver_from_dpkby_name,
+                user5.name AS ho_driver_to_dpkby_name,
+                user6.name AS accept_dpk_from_driverby_name,
+                user7.name AS ho_dpk_to_deliveryby_name,
+                user8.name AS accept_delivery_from_dpkby_name,
+                user9.name AS ho_delivery_to_mktby_name,
+                user10.name AS accept_mkt_from_deliveryby_name,
+                user11.name AS ho_mkt_to_fatby_name,
+                user12.name AS accept_fat_from_mktby_name,
+                user13.name AS ho_driver_to_customerby_name,
+                user14.name AS accept_customer_from_driverby_name
+            FROM adw_trackingsj ats
+            JOIN PivotedEvents pe ON ats.adw_trackingsj_id = pe.adw_trackingsj_id
+            LEFT JOIN ad_user user1 ON pe.ho_delivery_to_dpkby = user1.ad_user_id
+            LEFT JOIN ad_user user2 ON pe.accept_dpk_from_deliveryby = user2.ad_user_id
+            LEFT JOIN ad_user user3 ON pe.ho_dpk_to_driverby = user3.ad_user_id
+            LEFT JOIN ad_user user4 ON pe.accept_driver_from_dpkby = user4.ad_user_id
+            LEFT JOIN ad_user user5 ON pe.ho_driver_to_dpkby = user5.ad_user_id
+            LEFT JOIN ad_user user6 ON pe.accept_dpk_from_driverby = user6.ad_user_id
+            LEFT JOIN ad_user user7 ON pe.ho_dpk_to_deliveryby = user7.ad_user_id
+            LEFT JOIN ad_user user8 ON pe.accept_delivery_from_dpkby = user8.ad_user_id
+            LEFT JOIN ad_user user9 ON pe.ho_delivery_to_mktby = user9.ad_user_id
+            LEFT JOIN ad_user user10 ON pe.accept_mkt_from_deliveryby = user10.ad_user_id
+            LEFT JOIN ad_user user11 ON pe.ho_mkt_to_fatby = user11.ad_user_id
+            LEFT JOIN ad_user user12 ON pe.accept_fat_from_mktby = user12.ad_user_id
+            LEFT JOIN ad_user user13 ON pe.ho_driver_to_customerby = user13.ad_user_id
+            LEFT JOIN ad_user user14 ON pe.accept_customer_from_driverby = user14.ad_user_id
+            WHERE ats.m_inout_id = ANY($1::int[])
+        `;
+
+            const resultPgDetail = await dbClient.query(queryPostgresDetail, [targetIds]);
+            const postgresDetails = resultPgDetail.rows || [];
+
+            // ==========================
+            // LANGKAH 6: MAPPING DATA AKHIR (Urutkan kembali sesuai pagedItems)
+            // ==========================
+
+            const finalData = pagedItems.map(item => {
+                const oraDetail = oracleDetails.find(od => String(od.M_INOUT_ID) === String(item.m_inout_id));
+                const pgDetail = postgresDetails.find(pd => String(pd.m_inout_id) === String(item.m_inout_id));
+
+                // Gabungkan Data
+                if (pgDetail) {
+                    return {
+                        ...pgDetail,
+                        // Timpa data master dari Oracle (karena PG mungkin kosong utk field ini)
+                        customer: oraDetail?.CUSTOMER || pgDetail.customer,
+                        adw_tms_id: oraDetail?.ADW_TMS_ID || pgDetail.adw_tms_id,
+                        plantime: oraDetail?.PLANTIME || pgDetail.plantime,
+                        documentno: oraDetail?.DOCUMENTNO || pgDetail.documentno
+                    };
+                } else {
+                    // Jika tidak ada di PG, pakai data Oracle saja dengan field PG null
+                    return {
+                        m_inout_id: item.m_inout_id,
+                        documentno: oraDetail?.DOCUMENTNO || item.documentno,
+                        customer: oraDetail?.CUSTOMER || null,
+                        plantime: oraDetail?.PLANTIME || null,
+                        adw_tms_id: oraDetail?.ADW_TMS_ID || null,
+                        cancelrequest: null, adw_trackingsj_id: null, checkpoin_id: null,
+                        ho_delivery_to_dpk: null, // ... dan seterusnya null
+                    };
+                }
+            });
+
+            return {
+                success: true,
+                count: finalData.length,
+                meta: {
+                    total: totalRows,
+                    count: finalData.length,
+                    per_page: pageSize,
+                    current_page: page,
+                    total_pages: Math.ceil(totalRows / pageSize)
+                },
+                data: finalData,
+            };
+
+        } catch (error) {
+            console.error('Error in getHistory2:', error);
+            return { success: false, message: 'Server error: ' + error.message };
+        } finally {
+            if (connection) {
+                try { await connection.close(); } catch (e) { console.error(e); }
+            }
+            if (dbClient) {
+                try { dbClient.release(); } catch (e) { console.error(e); }
+            }
+        }
+    }
+
     async toCancel(server, payload) {
         const { action, m_inout_id, handoverKey, role, userId } = payload;
         let dbClient;

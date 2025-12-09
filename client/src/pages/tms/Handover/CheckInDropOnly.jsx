@@ -277,7 +277,7 @@ export default function CheckInDropOnly() {
                 return;
             }
 
-            message.success("Submit handover berhasil!");
+            message.success("Receipt SJ berhasil!");
 
             setIsModalOpen(false);
             setSelectedRowKeys([]);
@@ -286,7 +286,7 @@ export default function CheckInDropOnly() {
             fetchData();
         } catch (err) {
             console.error(err);
-            message.error("Terjadi error saat submit.");
+            message.error("Terjadi error saat Receipt SJ.");
         }
     };
 

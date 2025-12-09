@@ -175,6 +175,9 @@ const ProgressShipment = () => {
                 };
             });
 
+            console.log('flow : ', flow);
+
+
             return {
                 key: String(id),
                 m_inout_id: id,

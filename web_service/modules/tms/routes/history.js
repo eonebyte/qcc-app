@@ -6,7 +6,7 @@ export default async (server, opts) => {
 
             const { startDate, endDate, docNo } = request.query;
 
-            const to_dpk = await server.tms.getHistory2(server, page, pageSize, startDate, endDate, docNo);
+            const to_dpk = await server.tms.getHistory3(server, page, pageSize, startDate, endDate, docNo);
             reply.send({ message: 'fetch successfully', data: to_dpk });
         } catch (error) {
             request.log.error(error);

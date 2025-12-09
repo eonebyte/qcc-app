@@ -392,7 +392,7 @@ export default function CheckOut() {
 
             if (resp1?.ok) console.log("RT OK");
 
-            message.success("Submit handover berhasil!");
+            message.success("Checkout berhasil!");
             setIsModalOpen(false);
             setSelectedRows([]);
             setSelectedRowKeys([]);
@@ -403,7 +403,7 @@ export default function CheckOut() {
             fetchDataDropOnly();
         } catch (err) {
             console.error(err);
-            message.error("Terjadi error saat submit.");
+            message.error("Terjadi error saat checkout.");
         }
     };
 

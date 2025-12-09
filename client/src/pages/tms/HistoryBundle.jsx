@@ -15,7 +15,7 @@ const HistoryBundle = () => {
     const menuItemStyle = { padding: "6px 12px" };
     const menuStyle = { marginBottom: 5, display: "flex", width: "100%" };
 
-    let labelTab = role === "driver" ? "CheckIn" : "Handover";
+    let labelTab = role === "driver" ? "Check Out" : "Handover";
 
     // === CASE 1: ROLE FAT → hanya show receipt ===
     if (role === "fat") {
