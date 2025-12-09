@@ -1138,7 +1138,7 @@ class Handover {
             // -----------------------------------------------------------
             // Kita cari barang yang MEMANG sedang di Checkpoint 6
             const queryPostgres = `
-            SELECT m_inout_id, checkpoin_id, driverby, tnkb_id 
+            SELECT m_inout_id, checkpoin_id, driverby, tnkb_id, drivername
             FROM adw_trackingsj 
             WHERE checkpoin_id = '7'
         `;
@@ -1200,6 +1200,7 @@ class Handover {
                     checkpoin_id: 7,
                     driverby: pgInfo.driverby || null,
                     tnkb_id: pgInfo.tnkb_id || null,
+                    drivername: pgInfo.drivername || null,
                 };
             });
 

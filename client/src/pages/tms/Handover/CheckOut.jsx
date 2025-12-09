@@ -175,6 +175,12 @@ export default function CheckOut() {
             ...getColumnSearchProps("customer"),
         },
         {
+            title: "Driver",
+            dataIndex: "drivername",
+            key: "drivername",
+            ...getColumnSearchProps("drivername"),
+        },
+        {
             title: "Plan Time",
             dataIndex: "plantime",
             key: "plantime",
@@ -314,6 +320,21 @@ export default function CheckOut() {
         return null;
     };
 
+    const validateSelectionDropOnly = (rows) => {
+        if (!rows || rows.length === 0) return "Tidak ada data dipilih.";
+
+        const firstDriver = rows[0].drivername;
+        const firstTnkb = rows[0].tnkb_id;
+
+        if (!rows.every(row => row.drivername === firstDriver))
+            return "Driver harus sama.";
+
+        if (!rows.every(row => row.tnkb_id === firstTnkb))
+            return "TNKB harus sama.";
+
+        return null;
+    };
+
     const submitRoundTrip = async () => {
         const error = validateSelection(selectedRows);
         if (error) {
@@ -321,48 +342,42 @@ export default function CheckOut() {
             return;
         }
 
-        const errorDropOnly = validateSelection(selectedRowsDropOnly);
-        if (errorDropOnly) {
-            // NOTE ❗ kalau kamu tidak mau block ketika kosong, 
-            // cukup return null bukan message error.
-            return;
+        let combinedData = [...selectedRows];
+
+        console.log('to trip or drop : ', selectedRows);
+        console.log('drop only : ', selectedRowsDropOnly);
+
+
+        if (selectedRowsDropOnly && selectedRowsDropOnly.length > 0) {
+            const errorDropOnly = validateSelectionDropOnly(selectedRowsDropOnly);
+
+            // Jika ada error pada drop only, stop proses
+            if (errorDropOnly) {
+                message.error(errorDropOnly); // Sebaiknya tampilkan pesan error
+                return;
+            }
+
+            const dropOnlyWithKey = selectedRowsDropOnly.map(row => ({
+                ...row,           // Salin semua data row yang sudah ada
+                tripMode: 'RT'    // Tambahkan key baru
+            }));
+
+            // 4. GABUNGKAN DATA: Tambahkan drop only ke combinedData
+            combinedData = [...combinedData, ...dropOnlyWithKey];
         }
 
-        const payloadDropOnly = {
-            driverName: selectedRowsDropOnly[0].drivername,
-            tnkbId: Number(selectedRowsDropOnly[0].tnkb_id),
-            data: selectedRowsDropOnly,
-        };
+        if (combinedData.length === 0) {
+            message.error("Tidak ada data yang dipilih");
+            return;
+        }
 
         const payload = {
             driverName: selectedRows[0].drivername,
             tnkbId: Number(selectedRows[0].tnkb_id),
-            data: selectedRows
+            data: combinedData
         };
 
         return fetch(`${backEndUrl}/handover/process/driver/to/customer`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            credentials: "include"
-        });
-    };
-
-    const submitDropOnly = async () => {
-        const error = validateSelection(selectedRowsDropOnly);
-        if (error) {
-            // NOTE ❗ kalau kamu tidak mau block ketika kosong, 
-            // cukup return null bukan message error.
-            return;
-        }
-
-        const payload = {
-            driverName: selectedRowsDropOnly[0].drivername,
-            tnkbId: Number(selectedRowsDropOnly[0].tnkb_id),
-            data: selectedRowsDropOnly,
-        };
-
-        return fetch(`${backEndUrl}/handover/process/driver/to/customer/do`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -374,10 +389,8 @@ export default function CheckOut() {
     const handleSubmit = async () => {
         try {
             const resp1 = await submitRoundTrip();
-            const resp2 = await submitDropOnly();
 
             if (resp1?.ok) console.log("RT OK");
-            if (resp2?.ok) console.log("DO OK");
 
             message.success("Submit handover berhasil!");
             setIsModalOpen(false);
@@ -455,6 +468,12 @@ export default function CheckOut() {
             ...getColumnSearchProps("documentno"),
         },
         {
+            title: "Driver",
+            dataIndex: "drivername",
+            key: "drivername",
+            ...getColumnSearchProps("documentno"),
+        },
+        {
             title: "Customer",
             dataIndex: "customer",
             key: "customer",
@@ -481,7 +500,7 @@ export default function CheckOut() {
 
 
     const rowSelectionDropOnly = {
-        selectedRowKeysDropOnly,
+        selectedRowKeys: selectedRowKeysDropOnly,
         onChange: (selectedKeys, selectedRows) => {
             setSelectedRowKeysDropOnly(selectedKeys);
             setSelectedRowsDropOnly(selectedRows);

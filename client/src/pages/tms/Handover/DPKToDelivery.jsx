@@ -142,6 +142,12 @@ export default function DPKToDelivery() {
             ...getColumnSearchProps("customer"),
         },
         {
+            title: "Driver",
+            dataIndex: "drivername",
+            key: "drivername",
+            ...getColumnSearchProps("customer"),
+        },
+        {
             title: "Plan Time",
             dataIndex: "plantime",
             key: "plantime",
@@ -169,7 +175,8 @@ export default function DPKToDelivery() {
                 plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
                 checkpoin_id: row.checkpoin_id,
                 driverby: row.driverby,
-                tnkb_id: row.tnkb_id
+                tnkb_id: row.tnkb_id,
+                drivername: row.drivername,
             }));
 
             setTableData(mapped);
@@ -213,22 +220,6 @@ export default function DPKToDelivery() {
             // Ambil nilai driverBy dan tnkbId dari row pertama
             const firstDriver = selectedRows[0].driverby;
             const firstTnkb = selectedRows[0].tnkb_id;
-
-            // Cek apakah semua row punya driverBy yang sama
-            const validDriver = selectedRows.every(row => row.driverby === firstDriver);
-
-            // Cek apakah semua row punya tnkbId yang sama
-            const validTnkb = selectedRows.every(row => row.tnkb_id === firstTnkb);
-
-            if (!validDriver) {
-                message.error("Semua data yang dipilih harus memiliki driverBy yang sama!");
-                return;
-            }
-
-            if (!validTnkb) {
-                message.error("Semua data yang dipilih harus memiliki tnkbId yang sama!");
-                return;
-            }
 
             const payload = {
                 driverId: Number(firstDriver),
