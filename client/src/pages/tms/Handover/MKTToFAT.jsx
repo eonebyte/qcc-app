@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { Button, Input, Space, Table, Modal, message, Badge } from "antd";
-import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
+import { CloseOutlined, SearchOutlined, SendOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
@@ -311,7 +311,6 @@ export default function MKTToFAT() {
         const allItems = getAllSelectedItems();
         return allItems.some(i => !i.sppno);
     };
-
     return (
         <LayoutGlobal>
             {/* TABEL UTAMA (PARENT) dengan SELECTION */}
@@ -330,9 +329,11 @@ export default function MKTToFAT() {
             {/* BUTTON HANDOVER */}
             <div style={{ marginTop: 16 }}>
                 <Button
+                    style={{ margin: 15 }}
                     type="primary"
                     disabled={isHandoverDisabled()}
                     onClick={openHandoverModal}
+                    icon={<SendOutlined />}
                 >
                     Handover ({getAllSelectedItems().length} Dokumen dari {selectedGroupRows.length} SPP)
                 </Button>

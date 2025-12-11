@@ -325,7 +325,7 @@ const DPKFromDelivery = () => {
             </div>
 
             <Modal
-                title={`Confirm Handover (${totalShipmentsInSelectedBundles} items from ${selectedBundlesForSubmit.length} bundles)`}
+                title={`Confirm Receipt (${totalShipmentsInSelectedBundles} items from ${selectedBundlesForSubmit.length} bundles)`}
                 open={isConfirmModalOpen}
                 onOk={executeSubmit}
                 onCancel={() => setIsConfirmModalOpen(false)}

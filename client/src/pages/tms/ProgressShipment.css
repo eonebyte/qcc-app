@@ -8,13 +8,11 @@
     flex: none !important;
 
     /* 2. Beri lebar yang tetap. Sesuaikan angka ini jika perlu. */
-    width: 123px !important;
+    width: 85px !important;
 
     /* 3. Atur posisi menjadi relative agar garis bisa diatur (penting untuk perbaikan garis). */
     position: relative;
 }
-
-
 
 /* Menargetkan judul (misal: "Delivery", "DPK") */
 .compact-timeline-steps .ant-steps-item-title {

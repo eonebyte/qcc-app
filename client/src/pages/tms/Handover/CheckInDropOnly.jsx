@@ -138,6 +138,12 @@ export default function CheckInDropOnly() {
             ...getColumnSearchProps("documentno"),
         },
         {
+            title: "Driver",
+            dataIndex: "drivername",
+            key: "drivername",
+            ...getColumnSearchProps("drivername"),
+        },
+        {
             title: "Customer",
             dataIndex: "customer",
             key: "customer",
@@ -239,20 +245,20 @@ export default function CheckInDropOnly() {
             const firstTnkb = selectedRows[0].tnkb_id;
 
             // Cek apakah semua row punya driverBy yang sama
-            const validDriver = selectedRows.every(row => row.drivername === firstDriver);
+            // const validDriver = selectedRows.every(row => row.drivername === firstDriver);
 
             // Cek apakah semua row punya tnkbId yang sama
-            const validTnkb = selectedRows.every(row => row.tnkb_id === firstTnkb);
+            // const validTnkb = selectedRows.every(row => row.tnkb_id === firstTnkb);
 
-            if (!validDriver) {
-                message.error("Semua data yang dipilih harus memiliki driverBy yang sama!");
-                return;
-            }
+            // if (!validDriver) {
+            //     message.error("Semua data yang dipilih harus memiliki driverBy yang sama!");
+            //     return;
+            // }
 
-            if (!validTnkb) {
-                message.error("Semua data yang dipilih harus memiliki tnkbId yang sama!");
-                return;
-            }
+            // if (!validTnkb) {
+            //     message.error("Semua data yang dipilih harus memiliki tnkbId yang sama!");
+            //     return;
+            // }
             const payload = {
                 driverName: firstDriver,
                 tnkbId: Number(firstTnkb),
@@ -320,14 +326,14 @@ export default function CheckInDropOnly() {
 
             {/* MODAL CONFIRMATION */}
             <Modal
-                title="Confirm Handover"
+                title="Confirm Receipt"
                 open={isModalOpen}
                 onCancel={() => setIsModalOpen(false)}
                 onOk={handleSubmit}
                 okText="Submit"
                 cancelText="Cancel"
             >
-                <p>Apakah Anda yakin ingin submit berikut:</p>
+                <p>Apakah Anda yakin ingin Receipt SJ berikut:</p>
 
                 <ul>
                     {selectedRows.map((r) => (

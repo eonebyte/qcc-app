@@ -794,6 +794,7 @@ class Receipt {
                 LEFT JOIN adw_handover_group hg ON hg.adw_handover_group_id = gs.adw_handover_group_id
                 WHERE t.checkpoin_id = $1
                 AND hg.checkpoint = $1   -- Tambahan penting
+                AND attachment IS NULL
                 ORDER BY t.documentno DESC
             `;
 

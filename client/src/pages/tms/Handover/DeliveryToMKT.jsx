@@ -288,11 +288,11 @@ export default function DeliveryToMKT() {
                 {/* BUTTON HANDOVER */}
                 <div style={{ marginTop: 16 }}>
                     <Button
-                        icon={<SendOutlined />}
                         style={{ margin: 15 }}
                         type="primary"
                         disabled={selectedRows.length === 0}
                         onClick={openHandoverModal}
+                        icon={<SendOutlined />}
                     >
                         Handover {selectedRows.length > 0 ? `(${selectedRows.length})` : ''}
                     </Button>

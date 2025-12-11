@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Button, Input, Space, Table, Modal, message, Switch, notification, Tag } from "antd";
-import { CheckCircleOutlined, CloseOutlined, SearchOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, CloseOutlined, SearchOutlined, SendOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
 import axios from "axios";
@@ -15,6 +15,10 @@ const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 export default function CheckOut() {
     const dispatch = useDispatch();
+
+    const user = useSelector((state) => state.auth.user);
+    // const userId = user.ad_user_id;
+    const userName = user.name;
 
     const customers = useSelector(state => state.customers.list);
 
@@ -218,8 +222,9 @@ export default function CheckOut() {
             const json = await resp.json();
 
 
+            const dataFiltered = json.data.data.filter(bundle => bundle.drivername === userName);
 
-            const mapped = json.data.data.map((row, index) => ({
+            const mapped = dataFiltered.map((row, index) => ({
                 key: row.m_inout_id,
                 adw_trackingsj_id: row.adw_trackingsj_id,
                 m_inout_id: row.m_inout_id,
@@ -308,14 +313,14 @@ export default function CheckOut() {
     const validateSelection = (rows) => {
         if (!rows || rows.length === 0) return "Tidak ada data dipilih.";
 
-        const firstDriver = rows[0].drivername;
-        const firstTnkb = rows[0].tnkb_id;
+        // const firstDriver = rows[0].drivername;
+        // const firstTnkb = rows[0].tnkb_id;
 
-        if (!rows.every(row => row.drivername === firstDriver))
-            return "Driver harus sama.";
+        // if (!rows.every(row => row.drivername === firstDriver))
+        //     return "Driver harus sama.";
 
-        if (!rows.every(row => row.tnkb_id === firstTnkb))
-            return "TNKB harus sama.";
+        // if (!rows.every(row => row.tnkb_id === firstTnkb))
+        //     return "TNKB harus sama.";
 
         return null;
     };
@@ -323,14 +328,14 @@ export default function CheckOut() {
     const validateSelectionDropOnly = (rows) => {
         if (!rows || rows.length === 0) return "Tidak ada data dipilih.";
 
-        const firstDriver = rows[0].drivername;
-        const firstTnkb = rows[0].tnkb_id;
+        // const firstDriver = rows[0].drivername;
+        // const firstTnkb = rows[0].tnkb_id;
 
-        if (!rows.every(row => row.drivername === firstDriver))
-            return "Driver harus sama.";
+        // if (!rows.every(row => row.drivername === firstDriver))
+        //     return "Driver harus sama.";
 
-        if (!rows.every(row => row.tnkb_id === firstTnkb))
-            return "TNKB harus sama.";
+        // if (!rows.every(row => row.tnkb_id === firstTnkb))
+        //     return "TNKB harus sama.";
 
         return null;
     };
@@ -508,7 +513,6 @@ export default function CheckOut() {
     };
 
     // ================== OPEN MODAL ==================
-
     return (
         <>
             <LayoutGlobal>
@@ -530,9 +534,11 @@ export default function CheckOut() {
                 {/* BUTTON HANDOVER */}
                 <div style={{ marginTop: 16 }}>
                     <Button
+                        style={{ margin: 15 }}
                         type="primary"
                         disabled={selectedRows.length === 0}
                         onClick={openHandoverModal}
+                        icon={<SendOutlined />}
                     >
                         Check Out
                     </Button>
@@ -540,7 +546,7 @@ export default function CheckOut() {
 
                 {/* MODAL CONFIRMATION */}
                 <Modal
-                    title="Confirm Handover"
+                    title="Confirm Check Out"
                     open={isModalOpen}
                     onCancel={() => setIsModalOpen(false)}
                     onOk={handleSubmit}

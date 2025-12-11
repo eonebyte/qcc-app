@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Button, Input, Space, Table, Modal, message, notification, Select, Tag } from "antd";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
-import { CheckOutlined, CloseOutlined, SearchOutlined } from "@ant-design/icons";
+import { CheckOutlined, CloseOutlined, SearchOutlined, SendOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
 import axios from "axios";
@@ -178,7 +178,7 @@ export default function DPKToDriver() {
                     if (record.cancelrequest == 'Y') {
                         return (<Space>
                             <Button onClick={() => showModalConfirm(record)}
-                                icon={<CheckOutlined />} size='small' color="cyan" variant="outlined">Konfirm Cancel</Button>
+                                icon={<CheckOutlined />} size='small' color="cyan" variant="outlined">Confirm Cancel</Button>
                             <Button onClick={() => showModalRejectCancel(record)}
                                 icon={<CloseOutlined />} size='small' danger>Reject</Button>
                         </Space>)
@@ -322,9 +322,17 @@ export default function DPKToDriver() {
 
     const handleConfirmOk = async () => {
         console.log("confirm canceling item:", itemToConfirm);
+
+        const payload = {
+            ...itemToConfirm,
+            fromActor: "DPK",
+            toActor: "Driver",
+        };
+
+        console.log("confirm canceling item:", payload);
         try {
 
-            const res = await axios.post(`${backEndUrl}/tms/cancel`, itemToConfirm, { withCredentials: true });
+            const res = await axios.post(`${backEndUrl}/tms/cancel`, payload, { withCredentials: true });
 
             if (res.data.success) {
                 notification.success({ message: 'Info', description: `Dokumen ${itemToConfirm.documentno} akan diproses untuk dicancel.` });
@@ -372,7 +380,6 @@ export default function DPKToDriver() {
         setItemToConfirm(null);
     };
 
-
     return (
         <LayoutGlobal>
             <Table
@@ -393,10 +400,11 @@ export default function DPKToDriver() {
             {/* BUTTON HANDOVER */}
             <div style={{ marginTop: 16 }}>
                 <Button
-                style={{margin: 15}}
+                    style={{ margin: 15 }}
                     type="primary"
                     disabled={selectedRows.length === 0}
                     onClick={openHandoverModal}
+                    icon={<SendOutlined />}
                 >
                     Handover {selectedRows.length > 0 ? `(${selectedRows.length})` : ''}
                 </Button>

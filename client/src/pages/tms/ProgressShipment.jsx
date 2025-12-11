@@ -63,14 +63,14 @@ const formatTime = (isoString) => {
 };
 
 const stepDefinitions = [
-    { title: 'Delivery', icon: <HourglassOutlined style={{ fontSize: 10 }} />, handoverKey: 'ho_delivery_to_dpk', handoverByKey: 'ho_delivery_to_dpkby_name', acceptKey: 'accept_dpk_from_delivery', acceptByKey: 'accept_dpk_from_deliveryby_name', preHandoverText: 'HO ke DPK', postHandoverText: 'Wait Accept DPK' },
-    { title: 'DPK', icon: <FileTextOutlined />, handoverKey: 'ho_dpk_to_driver', handoverByKey: 'ho_dpk_to_driverby_name', acceptKey: 'accept_driver_from_dpk', acceptByKey: 'accept_driver_from_dpkby_name', preHandoverText: 'Handover ke Driver', postHandoverText: 'Wait Accept Driver' },
-    // { title: 'Driver', icon: <CarOutlined />, handoverKey: 'ho_driver_to_dpk', handoverByKey: 'ho_driver_to_dpkby_name', acceptKey: 'accept_dpk_from_driver', acceptByKey: 'accept_dpk_from_driverby_name', preHandoverText: 'Check In to Customer', postHandoverText: 'Wait Accept DPK' },
-    { title: 'Driver', icon: <CarOutlined />, handoverKey: 'ho_driver_to_customer', handoverByKey: 'ho_driver_to_customerby_name', acceptKey: 'accept_customer_from_driver', acceptByKey: 'accept_customer_from_driverby_name', preHandoverText: 'Check In to Customer', postHandoverText: 'Wait Diambil' },
-    { title: 'Customer', icon: <TeamOutlined />, handoverKey: 'ho_driver_to_dpk', handoverByKey: 'ho_driver_to_dpkby_name', acceptKey: 'accept_dpk_from_driver', acceptByKey: 'accept_dpk_from_driverby_name', preHandoverText: 'On Customer', postHandoverText: 'Wait Accept DPK' },
-    { title: 'DPK', icon: <FileTextOutlined />, handoverKey: 'ho_dpk_to_delivery', handoverByKey: 'ho_dpk_to_deliveryby_name', acceptKey: 'accept_delivery_from_dpk', acceptByKey: 'accept_delivery_from_dpkby_name', preHandoverText: 'Handover ke Delivery', postHandoverText: 'Wait Accept Delivery' },
-    { title: 'Delivery', icon: <HourglassOutlined />, handoverKey: 'ho_delivery_to_mkt', handoverByKey: 'ho_delivery_to_mktby_name', acceptKey: 'accept_mkt_from_delivery', acceptByKey: 'accept_mkt_from_deliveryby_name', preHandoverText: 'Handover ke Marketing', postHandoverText: 'Wait Accept Marketing' },
-    { title: 'Marketing', icon: <AuditOutlined />, handoverKey: 'ho_mkt_to_fat', handoverByKey: 'ho_mkt_to_fatby_name', acceptKey: 'accept_fat_from_mkt', acceptByKey: 'accept_fat_from_mktby_name', preHandoverText: 'Handover ke FAT', postHandoverText: 'Wait Accept FAT' },
+    { title: 'Delivery', icon: <HourglassOutlined style={{ fontSize: 10 }} />, handoverKey: 'ho_delivery_to_dpk', handoverByKey: 'ho_delivery_to_dpkby_name', acceptKey: 'accept_dpk_from_delivery', acceptByKey: 'accept_dpk_from_deliveryby_name', preHandoverText: 'HO ke DPK', postHandoverText: 'Wait Acc. DPK' },
+    { title: 'DPK', icon: <FileTextOutlined />, handoverKey: 'ho_dpk_to_driver', handoverByKey: 'ho_dpk_to_driverby_name', acceptKey: 'accept_driver_from_dpk', acceptByKey: 'accept_driver_from_dpkby_name', preHandoverText: 'Handover ke Driver', postHandoverText: 'Wait Acc. Driver' },
+    // { title: 'Driver', icon: <CarOutlined />, handoverKey: 'ho_driver_to_dpk', handoverByKey: 'ho_driver_to_dpkby_name', acceptKey: 'accept_dpk_from_driver', acceptByKey: 'accept_dpk_from_driverby_name', preHandoverText: 'Check In to Customer', postHandoverText: 'Wait Acc. DPK' },
+    { title: 'Driver', icon: <CarOutlined />, handoverKey: 'ho_driver_to_customer', handoverByKey: 'ho_driver_to_customerby_name', acceptKey: 'accept_customer_from_driver', acceptByKey: 'accept_customer_from_driverby_name', preHandoverText: 'Check Out (Customer)', postHandoverText: 'Wait Diambil' },
+    { title: 'Customer', icon: <TeamOutlined />, handoverKey: 'ho_driver_to_dpk', handoverByKey: 'ho_driver_to_dpkby_name', acceptKey: 'accept_dpk_from_driver', acceptByKey: 'accept_dpk_from_driverby_name', preHandoverText: 'On Customer', postHandoverText: 'Wait Acc. DPK' },
+    { title: 'DPK', icon: <FileTextOutlined />, handoverKey: 'ho_dpk_to_delivery', handoverByKey: 'ho_dpk_to_deliveryby_name', acceptKey: 'accept_delivery_from_dpk', acceptByKey: 'accept_delivery_from_dpkby_name', preHandoverText: 'Handover ke Delivery', postHandoverText: 'Wait Acc. Delivery' },
+    { title: 'Delivery', icon: <HourglassOutlined />, handoverKey: 'ho_delivery_to_mkt', handoverByKey: 'ho_delivery_to_mktby_name', acceptKey: 'accept_mkt_from_delivery', acceptByKey: 'accept_mkt_from_deliveryby_name', preHandoverText: 'Handover ke MKT', postHandoverText: 'Wait Acc. MKT' },
+    { title: 'Marketing', icon: <AuditOutlined />, handoverKey: 'ho_mkt_to_fat', handoverByKey: 'ho_mkt_to_fatby_name', acceptKey: 'accept_fat_from_mkt', acceptByKey: 'accept_fat_from_mktby_name', preHandoverText: 'Handover ke FAT', postHandoverText: 'Wait Acc. FAT' },
     { title: 'FAT', icon: <CheckCircleOutlined />, isFinal: true, acceptKey: 'accept_fat_from_mkt', acceptByKey: 'accept_fat_from_mktby_name' }
 ];
 
@@ -93,6 +93,9 @@ const ProgressShipment = () => {
     const searchInput = useRef(null);
 
     const [dateRange, setDateRange] = useState([null, null]);
+
+    const [filtersState, setFiltersState] = useState({});
+
 
 
     const showTimelineModal = (record) => {
@@ -160,7 +163,7 @@ const ProgressShipment = () => {
                     if (!item.adw_tms_id) {
                         displayValue = 'Process Cek Security';
                     } else {
-                        displayValue = 'Check In to Customer';
+                        displayValue = 'Check Out (Customer)';
                     }
                 }
 
@@ -174,9 +177,6 @@ const ProgressShipment = () => {
                     rawData
                 };
             });
-
-            console.log('flow : ', flow);
-
 
             return {
                 key: String(id),
@@ -193,26 +193,36 @@ const ProgressShipment = () => {
     const fetchData = async (current = 1, pageSize = 10, dateRangeParam = dateRange, filters = {}) => {
         setLoading(true);
 
-        const startDate = dateRangeParam?.[0]
-            ? dateRangeParam[0].format("YYYY-MM-DD")
-            : "";
-        const endDate = dateRangeParam?.[1]
-            ? dateRangeParam[1].format("YYYY-MM-DD")
-            : "";
+        const params = {
+            page: current,
+            limit: pageSize,
+        };
 
-        const searchParam = new URLSearchParams(filters).toString();
+        if (dateRangeParam && dateRangeParam[0]) {
+            params.startDate = dateRangeParam[0].format("YYYY-MM-DD");
+        }
+        if (dateRangeParam && dateRangeParam[1]) {
+            params.endDate = dateRangeParam[1].format("YYYY-MM-DD");
+        }
+
+        Object.keys(filters).forEach(key => {
+            if (filters[key]) {
+                params[key] = filters[key];
+            }
+        });
+
+        const queryString = new URLSearchParams(params).toString();
+
 
         try {
 
             const res = await fetch(
-                `${backEndUrl}/tms/history?page=${current}&limit=${pageSize}&startDate=${startDate}&endDate=${endDate}&${searchParam}`,
+                `${backEndUrl}/tms/history?${queryString}`,
                 { credentials: "include", }
             );
+
             if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
             const result = await res.json();
-
-            console.log('Raw API response:', result);
-
 
             // Robust parsing: terima banyak bentuk response
             let payload = [];
@@ -242,8 +252,6 @@ const ProgressShipment = () => {
 
             const transformed = transformApiData(payload, current, pageSize);
 
-            console.log('transformed data:', transformed);
-
             setShipmentData(transformed);
 
             // determine total count from various possible keys
@@ -266,30 +274,59 @@ const ProgressShipment = () => {
     const handleExportExcel = async () => {
         setExportLoading(true);
         try {
-            const startDate = dateRange?.[0] ? dateRange[0].format("YYYY-MM-DD") : "";
-            const endDate = dateRange?.[1] ? dateRange[1].format("YYYY-MM-DD") : "";
+            // 1. Siapkan Parameter "Unlimited"
+            // Backend akan mendeteksi limit 0 sebagai instruksi untuk mengambil semua data
+            // dan menangani pemecahan query (chunking) secara internal.
+            const params = {
+                page: 0,
+                limit: 0,
+            };
 
-            // 1. Fetch data dengan limit besar (misal 10000) untuk export report
+            // 2. Tambahkan Tanggal
+            if (dateRange && dateRange[0]) {
+                params.startDate = dateRange[0].format("YYYY-MM-DD");
+            }
+            if (dateRange && dateRange[1]) {
+                params.endDate = dateRange[1].format("YYYY-MM-DD");
+            }
+
+            // 3. Tambahkan Filter Pencarian
+            if (filtersState && Object.keys(filtersState).length > 0) {
+                Object.entries(filtersState).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null && value !== '') {
+                        params[key] = value;
+                    }
+                });
+            }
+
+            const queryString = new URLSearchParams(params).toString();
+            console.log("Exporting All Data...", queryString);
+
+            // 4. Fetch Data
             const res = await fetch(
-                `${backEndUrl}/tms/history?page=1&limit=10000&startDate=${startDate}&endDate=${endDate}`,
-                { credentials: "include", }
+                `${backEndUrl}/tms/history?${queryString}`,
+                { credentials: "include" }
             );
+
             if (!res.ok) throw new Error("Gagal mengambil data untuk export");
             const result = await res.json();
 
+            // 5. Extract Data
             let rawData = [];
             const candidates = [result?.data?.data, result?.data, result?.items, result?.result, result];
             for (const c of candidates) {
                 if (Array.isArray(c)) { rawData = c; break; }
             }
 
-            if (rawData.length === 0) {
-                message.warning("Tidak ada data untuk diexport pada periode ini.");
-                setExportLoading(false);
+            if (!rawData || rawData.length === 0) {
+                Modal.warning({
+                    title: "Tidak Ada Data",
+                    content: "Tidak ada data untuk diexport.",
+                });
                 return;
             }
 
-            // 2. Formatting Data untuk Excel (Flattening Object)
+            // 6. Formatting Data Excel
             const excelData = rawData.map((item, index) => {
                 const row = {
                     "No": index + 1,
@@ -298,53 +335,50 @@ const ProgressShipment = () => {
                     "Tanggal Plan": item.plantime ? formatDateTime(item.plantime) : '-',
                 };
 
-                // Generate kolom dinamis berdasarkan step
                 stepDefinitions.forEach(step => {
-                    // Penamaan kolom agar unik, misal "Delivery Handover Time"
                     const prefix = step.title;
-
                     if (step.handoverKey) {
                         row[`${prefix} Handover Date`] = item[step.handoverKey] ? formatDateTime(item[step.handoverKey]) : '-';
                         row[`${prefix} Handover By`] = item[step.handoverByKey] || '-';
                     }
-
                     if (step.acceptKey) {
                         row[`${prefix} Accept Date`] = item[step.acceptKey] ? formatDateTime(item[step.acceptKey]) : '-';
                         row[`${prefix} Accept By`] = item[step.acceptByKey] || '-';
                     }
                 });
-
                 return row;
             });
 
-            // 3. Generate Worksheet & Workbook menggunakan SheetJS
+            // 7. Generate Excel File
             const worksheet = utils.json_to_sheet(excelData);
-
-            // Auto width columns (opsional, biar rapi)
             const wscols = Object.keys(excelData[0]).map(() => ({ wch: 20 }));
             worksheet['!cols'] = wscols;
 
             const workbook = utils.book_new();
             utils.book_append_sheet(workbook, worksheet, "Shipment Report");
 
-            // 4. Download File
-            const fileName = `Report_Shipment_${startDate || 'All'}_to_${endDate || 'All'}.xlsx`;
-            writeFileXLSX(workbook, fileName);
+            const startDateName = dateRange && dateRange[0] ? dateRange[0].format("YYYY-MM-DD") : "All";
+            const fileName = `Report_Shipment_${startDateName}.xlsx`;
 
-            message.success("Berhasil export data ke Excel");
+            writeFileXLSX(workbook, fileName);
+            message.success(`Berhasil export ${rawData.length} data ke Excel`);
 
         } catch (error) {
             console.error("Export Error:", error);
-            message.error("Gagal melakukan export excel");
+            message.error("Gagal melakukan export excel: " + error.message);
         } finally {
             setExportLoading(false);
         }
     };
 
-    const handleTableChange = (pag) => {
-        fetchData(pag.current, pag.pageSize);
-    };
+    const handleTableChange = (pag, filters, sorter, extra) => {
+        // PERBAIKAN: Cegah double fetch.
+        // Jika action adalah 'filter', kita abaikan di sini karena handleSearch
+        // atau handleReset yang akan melakukan fetch secara manual dengan data yang akurat.
+        if (extra.action === 'filter') return;
 
+        fetchData(pag.current, pag.pageSize, dateRange, filtersState);
+    };
 
     useEffect(() => {
         // initial load
@@ -353,19 +387,37 @@ const ProgressShipment = () => {
     }, []);
 
     const handleSearch = async (selectedKeys, confirm, dataIndex) => {
-        confirm();
+        // 1. Simpan ke state (untuk keperluan pagination nanti & export)
+        const newFilters = { ...filtersState, [dataIndex]: selectedKeys[0] };
+        setFiltersState(newFilters);
         setSearchText(selectedKeys[0]);
         setSearchedColumn(dataIndex);
 
-        await fetchData(1, pagination.pageSize, dateRange, {
-            [dataIndex]: selectedKeys[0]
-        });
+        // 2. Close dropdown UI
+        confirm();
+
+        // 3. Fetch manual dengan data filter YANG BARU (jangan pakai filtersState karena async)
+        // Reset ke page 1 setiap kali search
+        await fetchData(1, pagination.pageSize, dateRange, newFilters);
     };
 
-    const handleReset = (clearFilters) => {
+    const handleReset = (clearFilters, dataIndex, confirm) => {
         clearFilters();
         setSearchText('');
+
+        // Hapus filter dari state
+        const newFilters = { ...filtersState };
+        delete newFilters[dataIndex];
+        setFiltersState(newFilters);
+
+        // Close dropdown & trigger UI update
+        confirm();
+
+        // Fetch ulang data bersih
+        fetchData(1, pagination.pageSize, dateRange, newFilters);
     };
+
+
 
     const getColumnSearchProps = (dataIndex) => ({
         filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters, close }) => (
@@ -380,16 +432,23 @@ const ProgressShipment = () => {
                 />
                 <Space>
                     <Button type="primary" onClick={() => handleSearch(selectedKeys, confirm, dataIndex)} icon={<SearchOutlined />} size="small" style={{ width: 90 }}>Search</Button>
-                    <Button onClick={() => clearFilters && handleReset(clearFilters)} size="small" style={{ width: 90 }}>Reset</Button>
+                    <Button
+                        onClick={() => clearFilters && handleReset(clearFilters, dataIndex)}
+                        size="small"
+                        style={{ width: 90 }}
+                    >
+                        Reset
+                    </Button>
                     <Button type="link" size="small" onClick={() => { confirm({ closeDropdown: false }); setSearchText(selectedKeys[0]); setSearchedColumn(dataIndex); }}>Filter</Button>
                     <Button type="link" size="small" onClick={() => { close(); }}>Close</Button>
                 </Space>
             </div>
         ),
         filterIcon: (filtered) => <SearchOutlined style={{ color: filtered ? '#1677ff' : undefined }} />,
-        onFilter: (value, record) => record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
+        // onFilter: (value, record) => record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
         render: (text) => searchedColumn === dataIndex ? (<Highlighter highlightStyle={{ backgroundColor: '#ffc069', padding: 0 }} searchWords={[searchText]} autoEscape textToHighlight={text ? text.toString() : ''} />) : (text),
     });
+
 
     const columns = [
         { title: 'No', dataIndex: 'no', key: 'no' },
@@ -437,8 +496,8 @@ const ProgressShipment = () => {
                                 style={{ padding: 0, height: 'auto', lineHeight: 'inherit', textAlign: 'left' }}
                                 onClick={() => showTimelineModal(record)}
                             >
-                                <Text strong className="step-value" style={{ color: valueColor }}>
-                                    {step.value || 'Wait'}
+                                <Text strong className="step-value" style={{ color: valueColor, marginTop: 0 }}>
+                                    <span>{step.value || 'Wait'}</span>
                                 </Text>
                             </Button>
                         ),
@@ -507,23 +566,30 @@ const ProgressShipment = () => {
                                         key={index}
                                         dot={<ClockCircleOutlined />}
                                     >
-                                        <div style={{ fontWeight: 'bold', marginBottom: 4 }}>{step.title}</div>
+                                        <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
+                                            {step.title === 'Customer' ? 'Customer (Driver Auto to DPK)' : step.title}
+                                        </div>
 
                                         {(handoverTime || acceptTime) && (
                                             <div style={{ display: 'flex', gap: '16px' }}>
                                                 {handoverTime && (
                                                     <span>
-                                                        <strong>Ho:</strong> {handoverTime}
+                                                        <strong>{step.title === 'Driver' || step.title === 'Customer' ? 'CO: ' : 'HO: '}</strong>
+                                                        {handoverTime}
                                                         {step.rawData.handoverBy && ` by ${step.rawData.handoverBy}`}
                                                     </span>
                                                 )}
-                                                {(handoverTime && acceptTime && step.title !== "Driver") && <span> - </span>}
-                                                {(acceptTime && step.title !== "Driver") && (
+                                                {(handoverTime && acceptTime && step.title !== "Driver" && step.title !== "Customer") && <span> {`->`} </span>}
+                                                {(acceptTime && step.title !== "Driver" && step.title !== "Customer") && (
                                                     <span>
                                                         <strong>Receipt:</strong> {acceptTime}
                                                         {step.rawData.acceptBy && ` by ${step.rawData.acceptBy}`}
                                                     </span>
                                                 )}
+                                                {/* <span>
+                                                    <strong>Receipt:</strong> {acceptTime}
+                                                    {step.rawData.acceptBy && ` by ${step.rawData.acceptBy}`}
+                                                </span> */}
                                             </div>
                                         )}
                                     </Timeline.Item>

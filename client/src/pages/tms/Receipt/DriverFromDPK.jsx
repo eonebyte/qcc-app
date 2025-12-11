@@ -164,7 +164,6 @@ const DriverFromDPK = () => {
         return [
             { title: 'Document No', dataIndex: 'documentno', key: 'documentno' },
             { title: 'Customer', dataIndex: 'customer', key: 'customer' },
-            { title: 'From', dataIndex: 'to', key: 'to', width: 80, align: 'center' },
             { title: 'Plan Time', dataIndex: 'plantime', key: 'plantime', render: (text) => text ? DateTime.fromISO(text).toFormat('dd-MM-yyyy HH:mm') : 'N/A' },
             { title: 'Action', key: 'action', width: 100, render: (_, record) => <Button onClick={() => showModalReject(record)} icon={<CloseOutlined />} size='small' danger>Reject</Button> }
         ];
@@ -218,7 +217,7 @@ const DriverFromDPK = () => {
             </div>
 
             <Modal
-                title={`Confirm Handover (${totalShipmentsInSelectedBundles} items from ${selectedBundlesForSubmit.length} bundles)`}
+                title={`Confirm Receipt (${totalShipmentsInSelectedBundles} items from ${selectedBundlesForSubmit.length} bundles)`}
                 open={isConfirmModalOpen}
                 onOk={executeSubmit}
                 onCancel={() => setIsConfirmModalOpen(false)}

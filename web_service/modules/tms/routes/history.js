@@ -1,8 +1,8 @@
 export default async (server, opts) => {
     server.get('/history', async (request, reply) => {
         try {
-            const page = parseInt(request.query.page) || 1;
-            const pageSize = parseInt(request.query.limit) || 10;
+            const page = request.query.page ? parseInt(request.query.page) : 1;
+            const pageSize = request.query.limit !== undefined ? parseInt(request.query.limit) : 10;
 
             const { startDate, endDate, docNo } = request.query;
 

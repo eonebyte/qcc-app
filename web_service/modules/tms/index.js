@@ -5,6 +5,11 @@ import oracleDB from "../../configs/dbOracle.js";
 import crypto from "crypto";
 import dotenv from 'dotenv'
 import dayjs from "dayjs";
+import qr from "qrcode";
+import PDFDocument from "pdfkit";
+import fs from "fs";
+import path from "path";
+import { v4 as uuidv4 } from "uuid";
 
 
 
@@ -115,6 +120,128 @@ function keysToLower(obj) {
 
 
 class TMS {
+
+    formatDate(iso) {
+        if (!iso) return "-";
+        // convert ke WIB dan format YYYY-MM-DD
+        return dayjs(iso).utc().tz("Asia/Jakarta").format("YYYY-MM-DD");
+    };
+
+    formatTime(iso) {
+        if (!iso) return "-";
+        return dayjs(iso).utc().tz("Asia/Jakarta").format("HH:mm") + " WIB";
+    }
+
+    add7Hours(iso) {
+        if (!iso) return null;
+        return dayjs(iso).add(7, "hour");
+    }
+
+    async generateHandoverPdf(payload, from_act, to_act) {
+        const { listShipment, dataUser, bundleNo, dateHandover } = payload;
+
+        const uploadDir = path.join(process.cwd(), "uploads/handover");
+        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+        const uniqueId = uuidv4();
+        const fileName = `handover_${uniqueId}.pdf`;
+        const filePath = path.join(uploadDir, fileName);
+
+        const doc = new PDFDocument({ size: "A4", margin: 30 });
+        const stream = fs.createWriteStream(filePath);
+        doc.pipe(stream);
+
+        // ================= HEADER =================
+        doc.font('Helvetica-Bold').fontSize(12).text(`LIST HANDOVER (${from_act} to ${to_act})`, { align: "center" });
+        doc.moveDown(0.2);
+        doc.font('Helvetica').fontSize(10).text(`No: ${bundleNo}`, { align: "center" });
+        doc.moveDown(1.5);
+
+        // ================= TABLE SETUP =================
+        const startX = 30;
+        const colNo = 30;
+        const colCust = 70;
+        const colShip = 180;
+        const colMove = 300;
+        const colStat = 400;
+        const rowHeight = 12; // compact
+        const pageHeight = doc.page.height - doc.page.margins.bottom;
+
+        function drawTableHeader() {
+            const headerY = doc.y;
+            doc.font('Helvetica-Bold').fontSize(9);
+            doc.text("No", colNo, headerY);
+            doc.text("Customer", colCust, headerY);
+            doc.text("Shipment No", colShip, headerY);
+            doc.text("Movement Date", colMove, headerY);
+            doc.text("Status", colStat, headerY);
+            doc.moveTo(startX, headerY + 12).lineTo(565, headerY + 12).lineWidth(0.5).stroke();
+            doc.y = headerY + 15;
+        }
+
+        drawTableHeader();
+
+        doc.font('Helvetica').fontSize(8);
+
+        for (let idx = 0; idx < listShipment.length; idx++) {
+            const ship = listShipment[idx];
+            const moveDate = dayjs(ship.movementdate).tz("Asia/Jakarta").format("YYYY-MM-DD");
+            const statusText = ship.canceled && ship.canceled === 'Y' ? "CANCEL" : "SUCCESS";
+
+            // ====== PAGE BREAK ======
+            if (doc.y + rowHeight * 2 > pageHeight) {
+                doc.addPage();
+                drawTableHeader();
+            }
+
+            const rowY = doc.y;
+            doc.text(idx + 1, colNo, rowY);
+            doc.text(ship.customer, colCust, rowY);
+            doc.text(ship.documentno, colShip, rowY);
+            doc.text(moveDate, colMove, rowY);
+            doc.text(statusText, colStat, rowY);
+
+            doc.moveTo(startX, rowY + rowHeight).lineTo(565, rowY + rowHeight).lineWidth(0.25).stroke();
+            doc.y = rowY + rowHeight + 3; // spacing compact
+        }
+
+        doc.moveDown(1.5);
+
+        // ================= SIGNATURE =================
+        const sigStartY = doc.y;
+        const centerX = 297.5;
+        const leftX = 80;
+        const rightX = 380;
+        const boxWidth = 160;
+
+        const createdHour = this.formatTime(this.add7Hours(dateHandover.createdBundle));
+        const receivedHour = this.formatTime(this.add7Hours(dateHandover.receivedBundle));
+
+        doc.font('Helvetica-Bold').fontSize(10);
+        doc.text(from_act, leftX, sigStartY, { align: "center", width: boxWidth });
+        doc.text(to_act, rightX, sigStartY, { align: "center", width: boxWidth });
+
+        // QR Code
+        const qrUrl = `${pathUrl}:3200/files/handover/${fileName}`;
+        const qrData = await qr.toDataURL(qrUrl);
+        doc.image(qrData, centerX - 30, sigStartY - 5, { width: 60 });
+
+        const lineY = sigStartY + 40;
+        doc.moveTo(leftX, lineY).lineTo(leftX + boxWidth, lineY).lineWidth(1).stroke();
+        doc.moveTo(rightX, lineY).lineTo(rightX + boxWidth, lineY).lineWidth(1).stroke();
+
+        doc.font('Helvetica').fontSize(8);
+        doc.text(dataUser.createdby_name, leftX, lineY + 3, { width: boxWidth, align: "center" });
+        doc.text(dataUser.receivedby_name, rightX, lineY + 3, { width: boxWidth, align: "center" });
+
+        doc.text(createdHour, leftX, lineY + 16, { width: boxWidth, align: "center" });
+        doc.text(receivedHour, rightX, lineY + 16, { width: boxWidth, align: "center" });
+
+        doc.end();
+        await new Promise(resolve => stream.on("finish", resolve));
+
+        return { fileName, filePath };
+    }
 
     async getDrivers(server) {
         let dbClient;
@@ -2424,11 +2551,9 @@ class TMS {
         let dbClient;
 
         try {
-            // 1. Buka koneksi parallel
-            [connection, dbClient] = await Promise.all([
-                oracleDB.openConnection(),
-                server.pg.connect()
-            ]);
+            // Buka koneksi
+            connection = await oracleDB.openConnection();
+            dbClient = await server.pg.connect();
 
             // ==========================
             // SETUP TANGGAL
@@ -2442,7 +2567,6 @@ class TMS {
                 const configQuery = `SELECT start_date FROM adw_trackingsj_config WHERE adw_trackingsj_config_id = 1 LIMIT 1;`;
                 const configRes = await dbClient.query(configQuery);
                 const configDate = configRes.rows.length > 0 ? configRes.rows[0].start_date : null;
-
                 if (!configDate) return { success: false, message: "Config start_date not found" };
 
                 finalStartDate = dayjs(configDate).format("YYYY-MM-DD");
@@ -2453,43 +2577,8 @@ class TMS {
             const oracleEndDate = dayjs(finalEndDate).format("YYYY-MM-DD");
 
             // ==========================
-            // LANGKAH 1: FETCH ID & SKOR DARI POSTGRES (RANKING LIST)
+            // LANGKAH 1: FETCH MASTER ID DARI ORACLE
             // ==========================
-            // Kita hitung skor berdasarkan jumlah event. Semakin banyak event, semakin tinggi skornya.
-
-            let pgDocFilter = "";
-            const pgValues = [finalStartDate, dayjs(finalEndDate).add(1, 'day').format("YYYY-MM-DD")]; // +1 day karena timestamp PG
-
-            if (docNo && docNo.trim() !== "") {
-                pgDocFilter = `AND ats.documentno ILIKE $3`;
-                pgValues.push(`%${docNo.trim()}%`);
-            }
-
-            const queryPgIds = `
-            SELECT 
-                ats.m_inout_id, 
-                COUNT(ate.adw_trackingsj_events_id) as score,
-                ats.plantime
-            FROM adw_trackingsj ats
-            LEFT JOIN adw_trackingsj_events ate ON ats.adw_trackingsj_id = ate.adw_trackingsj_id
-            WHERE ats.plantime >= $1 AND ats.plantime < $2
-            ${pgDocFilter}
-            GROUP BY ats.m_inout_id, ats.plantime
-        `;
-
-            const resultPgIds = await dbClient.query(queryPgIds, pgValues);
-
-            // Map untuk lookup cepat: m_inout_id -> score
-            const pgScoreMap = new Map();
-            resultPgIds.rows.forEach(row => {
-                pgScoreMap.set(String(row.m_inout_id), parseInt(row.score || 0));
-            });
-
-            // ==========================
-            // LANGKAH 2: FETCH SEMUA ID DARI ORACLE (MASTER LIST)
-            // ==========================
-            // Ambil hanya ID dan DocumentNo untuk sorting/filtering, ini ringan.
-
             let oraDocFilter = "";
             const oraBinds = {
                 startDate: oracleStartDate,
@@ -2502,23 +2591,23 @@ class TMS {
             }
 
             const queryOracleIds = `
-            SELECT 
-                mi.M_INOUT_ID,
-                mi.DOCUMENTNO,
-                mi.MOVEMENTDATE
-            FROM M_INOUT mi
-            JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID 
-            JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
-            WHERE
-                mi.DOCSTATUS = 'CO'
-                AND mi.ISSOTRX = 'Y'
-                AND mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
-                AND mi.MOVEMENTDATE < TO_DATE(:endDate, 'YYYY-MM-DD') + 1 
-                AND (mi.POREFERENCE NOT LIKE '%SAMPLE%' OR mi.POREFERENCE IS NULL)
-                AND cb.ISSUBCONTRACT = 'N'
-                AND co.ISMILKRUN = 'N'
-                ${oraDocFilter}
-        `;
+                SELECT 
+                    mi.M_INOUT_ID,
+                    mi.DOCUMENTNO,
+                    mi.MOVEMENTDATE
+                FROM M_INOUT mi
+                JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID 
+                JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
+                WHERE
+                    mi.DOCSTATUS = 'CO'
+                    AND mi.ISSOTRX = 'Y'
+                    AND mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
+                    AND mi.MOVEMENTDATE < TO_DATE(:endDate, 'YYYY-MM-DD') + 1 
+                    AND (mi.POREFERENCE NOT LIKE '%SAMPLE%' OR mi.POREFERENCE IS NULL)
+                    AND cb.ISSUBCONTRACT = 'N'
+                    AND co.ISMILKRUN = 'N'
+                    ${oraDocFilter}
+            `;
 
             const resultOracleIds = await connection.execute(queryOracleIds, oraBinds, {
                 outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT
@@ -2526,210 +2615,268 @@ class TMS {
 
             const oracleRowsRaw = resultOracleIds.rows || [];
 
+            if (oracleRowsRaw.length === 0) {
+                return {
+                    success: true, count: 0,
+                    meta: { total: 0, count: 0, per_page: pageSize, current_page: page, total_pages: 0 },
+                    data: []
+                };
+            }
+
+            const allOracleIds = oracleRowsRaw.map(row => row.M_INOUT_ID);
+
             // ==========================
-            // LANGKAH 3: MERGE & SORTING (LOGIKA UTAMA)
+            // LANGKAH 2: FETCH SKOR DARI POSTGRES (DENGAN BOBOT/WEIGHT)
+            // ==========================
+            // PERBAIKAN UTAMA DISINI: Menggunakan MAX(CASE WHEN...) untuk menentukan prioritas tertinggi
+
+            const queryPgScores = `
+                SELECT 
+                    ats.m_inout_id, 
+                    MAX(
+                        CASE 
+                            -- Level 8: FAT Final (Selesai Total)
+                            WHEN ate.adw_to_actor = 'FAT' AND ate.adw_event_type = 'ACCEPTANCE' THEN 1000
+                            -- Level 7: Menunggu di FAT
+                            WHEN ate.adw_to_actor = 'FAT' THEN 900
+                            -- Level 6: Proses di Marketing
+                            WHEN ate.adw_to_actor = 'Marketing' THEN 800
+                            -- Level 5: Balik ke Delivery
+                            WHEN ate.adw_to_actor = 'Delivery' AND ate.adw_from_actor = 'DPK' THEN 700
+                            -- Level 4: Balik ke DPK (Setelah Customer)
+                            WHEN ate.adw_to_actor = 'DPK' AND ate.adw_from_actor = 'Driver' THEN 600
+                            -- Level 3: Di Customer / Driver
+                            WHEN ate.adw_to_actor IN ('Customer', 'Driver') THEN 500
+                            -- Level 2: Masih di DPK Awal
+                            WHEN ate.adw_to_actor = 'DPK' THEN 400
+                            -- Level 1: Masih di Delivery Awal
+                            ELSE 100
+                        END
+                    ) as weight_score,
+                    -- Tambahkan count sebagai tie-breaker (pemecah seri jika weight sama)
+                    COUNT(ate.adw_trackingsj_events_id) as event_count
+                FROM adw_trackingsj ats
+                LEFT JOIN adw_trackingsj_events ate ON ats.adw_trackingsj_id = ate.adw_trackingsj_id
+                WHERE ats.m_inout_id = ANY($1::int[])
+                GROUP BY ats.m_inout_id
+            `;
+
+            const resultPgScores = await dbClient.query(queryPgScores, [allOracleIds]);
+
+            const pgScoreMap = new Map();
+            resultPgScores.rows.forEach(row => {
+                // Score Akhir = Bobot + (Jumlah Event / 1000). 
+                // Contoh: FAT Selesai (1000) + 12 events = 1000.012
+                // Contoh: FAT Wait (900) + 20 events = 900.020
+                // Hasil: 1000.012 > 900.020. FAT Selesai tetap menang.
+                const weight = parseInt(row.weight_score || 0);
+                const count = parseInt(row.event_count || 0);
+                const finalScore = weight + (count * 0.001);
+
+                pgScoreMap.set(String(row.m_inout_id), finalScore);
+            });
+
+            // ==========================
+            // LANGKAH 3: MERGE & SORTING
             // ==========================
 
             const mergedList = oracleRowsRaw.map(row => {
                 const idStr = String(row.M_INOUT_ID);
-                // Cek apakah ID ini ada di Postgres?
-                const pgScore = pgScoreMap.get(idStr);
-
-                // Logika Skor:
-                // Jika ada di PG (pgScore defined), mulai dari base score 100 + jumlah event
-                // Jika tidak ada di PG, score 0
-                const finalScore = (pgScore !== undefined) ? (100 + pgScore) : 0;
+                const score = pgScoreMap.get(idStr) || 0; // Default 0 jika tidak ada di PG
 
                 return {
                     m_inout_id: row.M_INOUT_ID,
                     documentno: row.DOCUMENTNO,
-                    score: finalScore,
-                    date: row.MOVEMENTDATE // Backup sorting jika score sama
+                    score: score,
+                    date: row.MOVEMENTDATE
                 };
             });
 
-            // SORTING:
-            // 1. Prioritas Score Tertinggi (Yang ada di PG dan event terbanyak)
-            // 2. Jika score sama, Document No Descending / Date Descending
+            // SORTING: Score Tertinggi (FAT Selesai) -> Terendah
             mergedList.sort((a, b) => {
                 if (b.score !== a.score) {
-                    return b.score - a.score; // Descending Score
+                    return b.score - a.score; //DESC
+                    // return a.score - b.score ; //ASC
                 }
-                // Jika sama (misal sama-sama belum ada di PG), urutkan by DocumentNo Desc
-                if (a.documentno < b.documentno) return 1;
-                if (a.documentno > b.documentno) return -1;
+                // Jika score sama, urutkan tanggal terbaru
+                const dateA = new Date(a.date).getTime();
+                const dateB = new Date(b.date).getTime();
+                if (dateB !== dateA) return dateB - dateA;
+
                 return 0;
             });
 
             // ==========================
-            // LANGKAH 4: PAGINATION (SLICE)
+            // LANGKAH 4: PAGINATION
             // ==========================
 
             const totalRows = mergedList.length;
-            const startIndex = (page - 1) * pageSize;
-            const endIndex = startIndex + pageSize;
+            let targetIds = [];
+            const isExportMode = parseInt(pageSize) === 0;
 
-            // Ambil hanya ID yang diperlukan untuk halaman ini
-            const pagedItems = mergedList.slice(startIndex, endIndex);
-            const targetIds = pagedItems.map(item => item.m_inout_id);
+            if (isExportMode) {
+                targetIds = mergedList.map(item => item.m_inout_id);
+            } else {
+                const startIndex = (page - 1) * pageSize;
+                const endIndex = startIndex + pageSize;
+                const pagedItems = mergedList.slice(startIndex, endIndex);
+                targetIds = pagedItems.map(item => item.m_inout_id);
+            }
 
             if (targetIds.length === 0) {
                 return {
-                    success: true,
-                    count: 0,
-                    meta: {
-                        total: totalRows,
-                        count: 0,
-                        per_page: pageSize,
-                        current_page: page,
-                        total_pages: Math.ceil(totalRows / pageSize)
-                    },
+                    success: true, count: 0,
+                    meta: { total: totalRows, count: 0, per_page: pageSize, current_page: page, total_pages: 0 },
                     data: []
                 };
             }
 
             // ==========================
-            // LANGKAH 5: QUERY DETAIL BERAT (HANYA UNTUK TARGET IDS)
+            // LANGKAH 5: FETCH DETAIL (CHUNKING)
             // ==========================
 
-            // 5a. Detail Oracle (Pakai IN Clause)
-            // Karena pageSize kecil (10-100), aman pakai IN (...) secara manual string injection untuk Oracle
-            const idsString = targetIds.join(',');
-            const queryOracleDetail = `
-            SELECT 
-                mi.M_INOUT_ID,
-                mi.DOCUMENTNO,
-                cb.VALUE AS CUSTOMER,
-                TO_DATE(
-                    TO_CHAR(mi.MOVEMENTDATE, 'YYYY-MM-DD') || ' ' ||
-                    TO_CHAR(mi.PLANTIME, 'HH24:MI:SS'),
-                    'YYYY-MM-DD HH24:MI:SS'
-                ) AS PLANTIME,
-                mi.ADW_TMS_ID
-            FROM M_INOUT mi
-            JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID 
-            WHERE mi.M_INOUT_ID IN (${idsString})
-        `;
+            const chunkArray = (arr, size) => {
+                const chunks = [];
+                for (let i = 0; i < arr.length; i += size) {
+                    chunks.push(arr.slice(i, i + size));
+                }
+                return chunks;
+            };
 
-            const resultOracleDetail = await connection.execute(queryOracleDetail, {}, {
-                outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT
-            });
-            const oracleDetails = resultOracleDetail.rows || [];
+            const idChunks = chunkArray(targetIds, 950);
+            const oracleDetails = [];
+            const postgresDetails = [];
 
+            for (const chunk of idChunks) {
+                const idsString = chunk.join(',');
 
-            // 5b. Detail Postgres (Query Complex WITH RankedEvents, tapi filter ID spesifik)
-            const queryPostgresDetail = `
-            WITH RankedEvents AS (
+                // 5a. Oracle
+                const queryOracleDetail = `
+                    SELECT 
+                        mi.M_INOUT_ID,
+                        mi.DOCUMENTNO,
+                        cb.VALUE AS CUSTOMER,
+                        TO_DATE(
+                            TO_CHAR(mi.MOVEMENTDATE, 'YYYY-MM-DD') || ' ' ||
+                            TO_CHAR(mi.PLANTIME, 'HH24:MI:SS'),
+                            'YYYY-MM-DD HH24:MI:SS'
+                        ) AS PLANTIME,
+                        mi.ADW_TMS_ID
+                    FROM M_INOUT mi
+                    JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID 
+                    WHERE mi.M_INOUT_ID IN (${idsString})
+                `;
+                const resOra = await connection.execute(queryOracleDetail, {}, { outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT });
+                if (resOra.rows) oracleDetails.push(...resOra.rows);
+
+                // 5b. Postgres
+                const queryPostgresDetail = `
+                WITH RankedEvents AS (
+                    SELECT
+                        e.adw_trackingsj_id, e.username, e.ad_user_id, e.created, e.adw_event_type, e.adw_from_actor, e.adw_to_actor,
+                        ROW_NUMBER() OVER(PARTITION BY e.adw_trackingsj_id, e.adw_event_type, e.adw_from_actor, e.adw_to_actor ORDER BY e.created DESC) as rn
+                    FROM adw_trackingsj_events e
+                    JOIN adw_trackingsj ats_filter ON e.adw_trackingsj_id = ats_filter.adw_trackingsj_id
+                    WHERE ats_filter.m_inout_id = ANY($1::int[]) 
+                ),
+                PivotedEvents AS (
+                   SELECT
+                        adw_trackingsj_id,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN created END) AS ho_delivery_to_dpk,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS ho_delivery_to_dpkby,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN created END) AS accept_dpk_from_delivery,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS accept_dpk_from_deliveryby,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN created END) AS ho_dpk_to_driver,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN ad_user_id END) AS ho_dpk_to_driverby,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN created END) AS accept_driver_from_dpk,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN username END) AS accept_driver_from_dpkby,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN created END) AS ho_driver_to_customer,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN ad_user_id END) AS ho_driver_to_customerby,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN created END) AS accept_customer_from_driver,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN username END) AS accept_customer_from_driverby,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN created END) AS ho_driver_to_dpk,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS ho_driver_to_dpkby,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN created END) AS accept_dpk_from_driver,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN username END) AS accept_dpk_from_driverby,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN created END) AS ho_dpk_to_delivery,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN ad_user_id END) AS ho_dpk_to_deliveryby,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN created END) AS accept_delivery_from_dpk,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN ad_user_id END) AS accept_delivery_from_dpkby,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN created END) AS ho_delivery_to_mkt,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN ad_user_id END) AS ho_delivery_to_mktby,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN created END) AS accept_mkt_from_delivery,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN ad_user_id END) AS accept_mkt_from_deliveryby,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN created END) AS ho_mkt_to_fat,
+                        MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN ad_user_id END) AS ho_mkt_to_fatby,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN created END) AS accept_fat_from_mkt,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN ad_user_id END) AS accept_fat_from_mktby
+                    FROM RankedEvents
+                    WHERE rn = 1
+                    GROUP BY adw_trackingsj_id
+                )
                 SELECT
-                    e.adw_trackingsj_id, e.ad_user_id, e.created, e.adw_event_type, e.adw_from_actor, e.adw_to_actor,
-                    ROW_NUMBER() OVER(PARTITION BY e.adw_trackingsj_id, e.adw_event_type, e.adw_from_actor, e.adw_to_actor ORDER BY e.created DESC) as rn
-                FROM adw_trackingsj_events e
-                JOIN adw_trackingsj ats_filter ON e.adw_trackingsj_id = ats_filter.adw_trackingsj_id
-                WHERE ats_filter.m_inout_id = ANY($1::int[]) -- Optimasi Filter Dini
-            ),
-            PivotedEvents AS (
-               SELECT
-                    adw_trackingsj_id,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN created END) AS ho_delivery_to_dpk,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS ho_delivery_to_dpkby,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN created END) AS accept_dpk_from_delivery,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS accept_dpk_from_deliveryby,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN created END) AS ho_dpk_to_driver,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN ad_user_id END) AS ho_dpk_to_driverby,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN created END) AS accept_driver_from_dpk,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Driver' THEN ad_user_id END) AS accept_driver_from_dpkby,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN created END) AS ho_driver_to_customer,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN ad_user_id END) AS ho_driver_to_customerby,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN created END) AS accept_customer_from_driver,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'Customer' THEN ad_user_id END) AS accept_customer_from_driverby,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN created END) AS ho_driver_to_dpk,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS ho_driver_to_dpkby,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN created END) AS accept_dpk_from_driver,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS accept_dpk_from_driverby,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN created END) AS ho_dpk_to_delivery,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN ad_user_id END) AS ho_dpk_to_deliveryby,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN created END) AS accept_delivery_from_dpk,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN ad_user_id END) AS accept_delivery_from_dpkby,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN created END) AS ho_delivery_to_mkt,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN ad_user_id END) AS ho_delivery_to_mktby,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN created END) AS accept_mkt_from_delivery,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Delivery' AND adw_to_actor = 'Marketing' THEN ad_user_id END) AS accept_mkt_from_deliveryby,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN created END) AS ho_mkt_to_fat,
-                    MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN ad_user_id END) AS ho_mkt_to_fatby,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN created END) AS accept_fat_from_mkt,
-                    MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Marketing' AND adw_to_actor = 'FAT' THEN ad_user_id END) AS accept_fat_from_mktby
-                FROM RankedEvents
-                WHERE rn = 1
-                GROUP BY adw_trackingsj_id
-            )
-            SELECT
-                ats.m_inout_id, '' AS customer, '' AS adw_tms_id, ats.documentno, ats.plantime,
-                ats.cancelrequest, ats.adw_trackingsj_id, ats.checkpoin_id,
-                pe.*,
-                user1.name AS ho_delivery_to_dpkby_name,
-                user2.name AS accept_dpk_from_deliveryby_name,
-                user3.name AS ho_dpk_to_driverby_name,
-                user4.name AS accept_driver_from_dpkby_name,
-                user5.name AS ho_driver_to_dpkby_name,
-                user6.name AS accept_dpk_from_driverby_name,
-                user7.name AS ho_dpk_to_deliveryby_name,
-                user8.name AS accept_delivery_from_dpkby_name,
-                user9.name AS ho_delivery_to_mktby_name,
-                user10.name AS accept_mkt_from_deliveryby_name,
-                user11.name AS ho_mkt_to_fatby_name,
-                user12.name AS accept_fat_from_mktby_name,
-                user13.name AS ho_driver_to_customerby_name,
-                user14.name AS accept_customer_from_driverby_name
-            FROM adw_trackingsj ats
-            JOIN PivotedEvents pe ON ats.adw_trackingsj_id = pe.adw_trackingsj_id
-            LEFT JOIN ad_user user1 ON pe.ho_delivery_to_dpkby = user1.ad_user_id
-            LEFT JOIN ad_user user2 ON pe.accept_dpk_from_deliveryby = user2.ad_user_id
-            LEFT JOIN ad_user user3 ON pe.ho_dpk_to_driverby = user3.ad_user_id
-            LEFT JOIN ad_user user4 ON pe.accept_driver_from_dpkby = user4.ad_user_id
-            LEFT JOIN ad_user user5 ON pe.ho_driver_to_dpkby = user5.ad_user_id
-            LEFT JOIN ad_user user6 ON pe.accept_dpk_from_driverby = user6.ad_user_id
-            LEFT JOIN ad_user user7 ON pe.ho_dpk_to_deliveryby = user7.ad_user_id
-            LEFT JOIN ad_user user8 ON pe.accept_delivery_from_dpkby = user8.ad_user_id
-            LEFT JOIN ad_user user9 ON pe.ho_delivery_to_mktby = user9.ad_user_id
-            LEFT JOIN ad_user user10 ON pe.accept_mkt_from_deliveryby = user10.ad_user_id
-            LEFT JOIN ad_user user11 ON pe.ho_mkt_to_fatby = user11.ad_user_id
-            LEFT JOIN ad_user user12 ON pe.accept_fat_from_mktby = user12.ad_user_id
-            LEFT JOIN ad_user user13 ON pe.ho_driver_to_customerby = user13.ad_user_id
-            LEFT JOIN ad_user user14 ON pe.accept_customer_from_driverby = user14.ad_user_id
-            WHERE ats.m_inout_id = ANY($1::int[])
-        `;
-
-            const resultPgDetail = await dbClient.query(queryPostgresDetail, [targetIds]);
-            const postgresDetails = resultPgDetail.rows || [];
+                    ats.m_inout_id, '' AS customer, '' AS adw_tms_id, ats.documentno, ats.plantime,
+                    ats.cancelrequest, ats.adw_trackingsj_id, ats.checkpoin_id,
+                    pe.*,
+                    user1.name AS ho_delivery_to_dpkby_name,
+                    user2.name AS accept_dpk_from_deliveryby_name,
+                    user3.name AS ho_dpk_to_driverby_name,
+                    pe.accept_driver_from_dpkby AS accept_driver_from_dpkby_name,
+                    user5.name AS ho_driver_to_dpkby_name,
+                    pe.accept_dpk_from_driverby AS accept_dpk_from_driverby_name,
+                    user7.name AS ho_dpk_to_deliveryby_name,
+                    user8.name AS accept_delivery_from_dpkby_name,
+                    user9.name AS ho_delivery_to_mktby_name,
+                    user10.name AS accept_mkt_from_deliveryby_name,
+                    user11.name AS ho_mkt_to_fatby_name,
+                    user12.name AS accept_fat_from_mktby_name,
+                    user13.name AS ho_driver_to_customerby_name,
+                    pe.accept_customer_from_driverby AS accept_customer_from_driverby_name
+                FROM adw_trackingsj ats
+                JOIN PivotedEvents pe ON ats.adw_trackingsj_id = pe.adw_trackingsj_id
+                LEFT JOIN ad_user user1 ON pe.ho_delivery_to_dpkby = user1.ad_user_id
+                LEFT JOIN ad_user user2 ON pe.accept_dpk_from_deliveryby = user2.ad_user_id
+                LEFT JOIN ad_user user3 ON pe.ho_dpk_to_driverby = user3.ad_user_id
+                LEFT JOIN ad_user user5 ON pe.ho_driver_to_dpkby = user5.ad_user_id
+                LEFT JOIN ad_user user7 ON pe.ho_dpk_to_deliveryby = user7.ad_user_id
+                LEFT JOIN ad_user user8 ON pe.accept_delivery_from_dpkby = user8.ad_user_id
+                LEFT JOIN ad_user user9 ON pe.ho_delivery_to_mktby = user9.ad_user_id
+                LEFT JOIN ad_user user10 ON pe.accept_mkt_from_deliveryby = user10.ad_user_id
+                LEFT JOIN ad_user user11 ON pe.ho_mkt_to_fatby = user11.ad_user_id
+                LEFT JOIN ad_user user12 ON pe.accept_fat_from_mktby = user12.ad_user_id
+                LEFT JOIN ad_user user13 ON pe.ho_driver_to_customerby = user13.ad_user_id
+                WHERE ats.m_inout_id = ANY($1::int[])
+                `;
+                const resPg = await dbClient.query(queryPostgresDetail, [chunk]);
+                if (resPg.rows) postgresDetails.push(...resPg.rows);
+            }
 
             // ==========================
-            // LANGKAH 6: MAPPING DATA AKHIR (Urutkan kembali sesuai pagedItems)
+            // LANGKAH 6: MAPPING FINAL
             // ==========================
 
-            const finalData = pagedItems.map(item => {
-                const oraDetail = oracleDetails.find(od => String(od.M_INOUT_ID) === String(item.m_inout_id));
-                const pgDetail = postgresDetails.find(pd => String(pd.m_inout_id) === String(item.m_inout_id));
+            const finalData = targetIds.map(id => {
+                const oraDetail = oracleDetails.find(od => String(od.M_INOUT_ID) === String(id));
+                const pgDetail = postgresDetails.find(pd => String(pd.m_inout_id) === String(id));
+                const masterItem = mergedList.find(m => String(m.m_inout_id) === String(id));
 
-                // Gabungkan Data
                 if (pgDetail) {
                     return {
                         ...pgDetail,
-                        // Timpa data master dari Oracle (karena PG mungkin kosong utk field ini)
                         customer: oraDetail?.CUSTOMER || pgDetail.customer,
                         adw_tms_id: oraDetail?.ADW_TMS_ID || pgDetail.adw_tms_id,
                         plantime: oraDetail?.PLANTIME || pgDetail.plantime,
                         documentno: oraDetail?.DOCUMENTNO || pgDetail.documentno
                     };
                 } else {
-                    // Jika tidak ada di PG, pakai data Oracle saja dengan field PG null
                     return {
-                        m_inout_id: item.m_inout_id,
-                        documentno: oraDetail?.DOCUMENTNO || item.documentno,
+                        m_inout_id: id,
+                        documentno: oraDetail?.DOCUMENTNO || masterItem?.documentno,
                         customer: oraDetail?.CUSTOMER || null,
                         plantime: oraDetail?.PLANTIME || null,
                         adw_tms_id: oraDetail?.ADW_TMS_ID || null,
                         cancelrequest: null, adw_trackingsj_id: null, checkpoin_id: null,
-                        ho_delivery_to_dpk: null, // ... dan seterusnya null
+                        ho_delivery_to_dpk: null
                     };
                 }
             });
@@ -2740,15 +2887,15 @@ class TMS {
                 meta: {
                     total: totalRows,
                     count: finalData.length,
-                    per_page: pageSize,
+                    per_page: isExportMode ? totalRows : pageSize,
                     current_page: page,
-                    total_pages: Math.ceil(totalRows / pageSize)
+                    total_pages: isExportMode ? 1 : Math.ceil(totalRows / pageSize)
                 },
                 data: finalData,
             };
 
         } catch (error) {
-            console.error('Error in getHistory2:', error);
+            console.error('Error in getHistory3:', error);
             return { success: false, message: 'Server error: ' + error.message };
         } finally {
             if (connection) {
@@ -4235,12 +4382,34 @@ class TMS {
                 { outFormat: oracleDB.OUT_FORMAT_OBJECT }
             );
 
+            const queryTrackingSJ = `
+                SELECT m_inout_id, canceled
+                FROM adw_trackingsj
+                WHERE m_inout_id = ANY($1)
+            `;
+
+
+            const resultTrackingSJ = await dbClient.query(queryTrackingSJ, [inoutIds]);
+            const pgRows = resultTrackingSJ.rows || [];
+
+            const pgMap = new Map(
+                pgRows.map(row => [Number(row.m_inout_id), row])
+            );
+
             const columns = resultShipmentRows.metaData.map(col => col.name.toLowerCase());
             const formattedRows = resultShipmentRows.rows.map(row => {
                 const obj = {};
+                // mapping Oracle columns → JS object
                 row.forEach((val, idx) => {
                     obj[columns[idx]] = val;
                 });
+
+                // ambil record tracking berdasarkan m_inout_id
+                const pgInfo = pgMap.get(Number(obj.m_inout_id));
+
+                // tambahkan cancel status ke object
+                obj.canceled = pgInfo?.canceled ?? null;
+
                 return obj;
             });
 
@@ -4340,6 +4509,17 @@ class TMS {
         `;
             await dbClient.query(deleteEventsQuery, [adw_trackingsj_id]);
 
+            const getGroupIdQuery = `
+                SELECT adw_handover_group_id 
+                FROM adw_group_sj 
+                WHERE adw_trackingsj_id = $1
+                AND CAST(checkpoint AS INTEGER) = (CAST((SELECT checkpoin_id FROM adw_trackingsj WHERE adw_trackingsj_id = $1) AS INTEGER)-1)
+            `;
+            const groupIdRes = await dbClient.query(getGroupIdQuery, [adw_trackingsj_id]);
+
+            const groupId = groupIdRes.rows[0]?.adw_handover_group_id || null;
+
+
 
             // QUERY 2: Delete group_sj with matching checkpoint
             const deleteGroupQuery = `
@@ -4347,9 +4527,26 @@ class TMS {
             USING adw_trackingsj t
             WHERE ags.adw_trackingsj_id = t.adw_trackingsj_id
               AND ags.adw_trackingsj_id = $1
-              AND CAST(ags.checkpoint AS INTEGER) = CAST(t.checkpoin_id AS INTEGER);
+              AND CAST(ags.checkpoint AS INTEGER) = (CAST(t.checkpoin_id AS INTEGER)-1);
         `;
             await dbClient.query(deleteGroupQuery, [adw_trackingsj_id]);
+
+            // DELETE HANDOVER_GROUP hanya jika tidak ada referensi lain
+            if (groupId) {
+                const checkRelationQuery = `
+                    SELECT COUNT(*) AS total
+                    FROM adw_group_sj
+                    WHERE adw_handover_group_id = $1
+                `;
+                const checkRel = await dbClient.query(checkRelationQuery, [groupId]);
+
+                if (Number(checkRel.rows[0].total) === 0) {
+                    await dbClient.query(
+                        `DELETE FROM adw_handover_group WHERE adw_handover_group_id = $1`,
+                        [groupId]
+                    );
+                }
+            }
 
 
             // QUERY 3: Update t.checkpoin_id - 1
@@ -4456,7 +4653,7 @@ class TMS {
         let dbClient;
         let oracleConnection;
 
-        const { adw_trackingsj_id } = payload;
+        const { adw_trackingsj_id, fromActor, toActor } = payload;
 
         try {
 
@@ -4531,44 +4728,121 @@ class TMS {
             await dbClient.query(deleteAccEventsQuery, [adw_trackingsj_id]);
 
 
-            // QUERY 2: Delete group_sj with matching checkpoint
-            // Ambil ID group yang cocok checkpoint
-            const getGroupIdsQuery = `
-                SELECT ags.adw_handover_group_id
-                FROM adw_group_sj ags
-                JOIN adw_trackingsj t ON ags.adw_trackingsj_id = t.adw_trackingsj_id
-                WHERE ags.adw_trackingsj_id = $1
-                AND CAST(ags.checkpoint AS INTEGER) = (CAST(t.checkpoin_id AS INTEGER) - 1);
-            `;
-            const resGroup = await dbClient.query(getGroupIdsQuery, [adw_trackingsj_id]);
+            // const getGroupIdQuery = `
+            //     SELECT adw_handover_group_id 
+            //     FROM adw_group_sj 
+            //     WHERE adw_trackingsj_id = $1
+            //     AND CAST(checkpoint AS INTEGER) = (CAST((SELECT checkpoin_id FROM adw_trackingsj WHERE adw_trackingsj_id = $1) AS INTEGER)-1)
+            // `;
+            // const groupIdRes = await dbClient.query(getGroupIdQuery, [adw_trackingsj_id]);
+
+            // const groupId = groupIdRes.rows[0]?.adw_handover_group_id || null;
+
+
 
             // Hapus pivot sesuai checkpoint
-            await dbClient.query(`
-                DELETE FROM adw_group_sj ags
-                USING adw_trackingsj t
-                WHERE ags.adw_trackingsj_id = t.adw_trackingsj_id
-                AND ags.adw_trackingsj_id = $1
-                AND CAST(ags.checkpoint AS INTEGER) = (CAST(t.checkpoin_id AS INTEGER) - 1);
-            `, [adw_trackingsj_id]);
+            // await dbClient.query(`
+            //     DELETE FROM adw_group_sj ags
+            //     USING adw_trackingsj t
+            //     WHERE ags.adw_trackingsj_id = t.adw_trackingsj_id
+            //     AND ags.adw_trackingsj_id = $1
+            //     AND CAST(ags.checkpoint AS INTEGER) = (CAST(t.checkpoin_id AS INTEGER) - 1);
+            // `, [adw_trackingsj_id]);
 
-            // Jika ada group terkait — hapus parent-nya
-            if (resGroup.rowCount > 0) {
-                const groupIds = resGroup.rows.map(row => row.adw_handover_group_id);
+            // if (groupId) {
+            //     const checkRelationQuery = `
+            //         SELECT COUNT(*) AS total
+            //         FROM adw_group_sj
+            //         WHERE adw_handover_group_id = $1
+            //     `;
+            //     const checkRel = await dbClient.query(checkRelationQuery, [groupId]);
 
-                await dbClient.query(
-                    `DELETE FROM adw_handover_group WHERE adw_handover_group_id = ANY($1)`,
-                    [groupIds]
-                );
-            }
+            //     if (Number(checkRel.rows[0].total) === 0) {
+            //         await dbClient.query(
+            //             `DELETE FROM adw_handover_group WHERE adw_handover_group_id = $1`,
+            //             [groupId]
+            //         );
+            //     }
+            // }
 
             // QUERY 3: Update t.checkpoin_id - 1
             const updateQuery = `
             UPDATE adw_trackingsj
-            SET checkpoin_id = (CAST(checkpoin_id AS INTEGER) - 2)::varchar, cancelrequest = 'N'
+                SET checkpoin_id = (CAST(checkpoin_id AS INTEGER) - 2)::varchar, 
+                cancelrequest = 'N',
+                canceled = 'Y'
             WHERE adw_trackingsj_id = $1
             RETURNING *;
         `;
             const updated = await dbClient.query(updateQuery, [adw_trackingsj_id]);
+
+            // console.log('updated : ', updated);
+
+
+
+
+            if (updated) {
+                const bundleQuery = `
+                SELECT ahg.documentno bundleno, ahg.attachment 
+                FROM adw_handover_group ahg 
+                WHERE ahg.adw_handover_group_id =
+                            (SELECT MAX(ags.adw_handover_group_id) 
+                            FROM adw_group_sj ags 
+                            WHERE ags.adw_trackingsj_id = $1)`
+                const bundleRes = await dbClient.query(bundleQuery, [adw_trackingsj_id]);
+
+                const bundle = bundleRes.rows[0];
+
+                const { listShipment, dataUser, bundleNo, bundleCheckpoint, dateHandover } = await this.listBundleDetailPDF(dbClient, bundle.bundleno)
+                const payload = {
+                    listShipment,
+                    dataUser,
+                    bundleNo,
+                    bundleCheckpoint,
+                    dateHandover
+                }
+
+                const { fileName } = await this.generateHandoverPdf(payload, fromActor, toActor)
+
+
+                if (fileName) {
+                    const updateHandoverGroupAttachment = `
+                    UPDATE adw_handover_group
+                    SET 
+                        updated = NOW(),
+                        attachment = $1
+                    WHERE documentno = $2
+                `;
+                    const updateAttachment = await dbClient.query(updateHandoverGroupAttachment, [
+                        fileName,
+                        bundle.bundleno
+                    ]);
+
+                    // Jika update berhasil → hapus file lama
+                    if (updateAttachment && bundle?.attachment) {
+                        const oldFilePath = path.join(
+                            process.cwd(),
+                            'uploads',
+                            'handover',
+                            bundle.attachment
+                        );
+
+                        if (fs.existsSync(oldFilePath)) {
+                            try {
+                                fs.unlinkSync(oldFilePath);
+                                console.log(`Attachment deleted: ${bundle.attachment}`);
+                            } catch (err) {
+                                console.error("Error deleting attachment:", err);
+                            }
+                        } else {
+                            console.log("Attachment file not found:", oldFilePath);
+                        }
+                    }
+                }
+            }
+
+
+
 
 
             await dbClient.query('COMMIT');
