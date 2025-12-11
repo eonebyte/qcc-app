@@ -2546,9 +2546,10 @@ class TMS {
         }
     }
 
-    async getHistory3(server, page, pageSize, startDate, endDate, docNo) {
+    async getHistory3(server, page, pageSize, startDate, endDate, docNo, customer) {
         let connection;
         let dbClient;
+
 
         try {
             // Buka koneksi
@@ -2589,6 +2590,12 @@ class TMS {
                 oraDocFilter = ` AND mi.DOCUMENTNO LIKE '%' || :docNo || '%' `;
                 oraBinds.docNo = docNo.trim();
             }
+
+            if (customer && customer.trim() !== "") {
+                oraDocFilter = ` AND cb.VALUE LIKE '%' || :customer || '%' `;
+                oraBinds.customer = customer.trim();
+            }
+
 
             const queryOracleIds = `
                 SELECT 
@@ -4651,20 +4658,16 @@ class TMS {
 
     async processCancel(server, payload) {
         let dbClient;
-        let oracleConnection;
-
-        const { adw_trackingsj_id, fromActor, toActor } = payload;
+        const { adw_trackingsj_id } = payload;
 
         try {
+            console.log('tracking id : ', adw_trackingsj_id);
 
             dbClient = await server.pg.connect();
             await dbClient.query('BEGIN'); // Start transaction
 
-            const checkQuery = `
-            SELECT checkpoin_id 
-            FROM adw_trackingsj 
-            WHERE adw_trackingsj_id = $1
-        `;
+            // 1. Cek Data
+            const checkQuery = `SELECT checkpoin_id FROM adw_trackingsj WHERE adw_trackingsj_id = $1`;
             const checkRes = await dbClient.query(checkQuery, [adw_trackingsj_id]);
 
             if (checkRes.rowCount === 0) {
@@ -4674,191 +4677,120 @@ class TMS {
             const currentCheckpoint = Number(checkRes.rows[0].checkpoin_id);
 
             // ==========================================================
-            //  CASE 1: Jika checkpoint = 2 → HAPUS SEMUA DATA TRACKING
+            //  CASE 1: HAPUS SEMUA (Checkpoint 2)
             // ==========================================================
             if (currentCheckpoint === 2) {
-
-                // Hapus events
-                await dbClient.query(
-                    `DELETE FROM adw_trackingsj_events WHERE adw_trackingsj_id = $1`,
-                    [adw_trackingsj_id]
-                );
-
-                // Hapus group
-                await dbClient.query(
-                    `DELETE FROM adw_group_sj WHERE adw_trackingsj_id = $1`,
-                    [adw_trackingsj_id]
-                );
-
-                // Hapus data utama
-                await dbClient.query(
-                    `DELETE FROM adw_trackingsj WHERE adw_trackingsj_id = $1`,
-                    [adw_trackingsj_id]
-                );
-
+                await dbClient.query(`DELETE FROM adw_trackingsj_events WHERE adw_trackingsj_id = $1`, [adw_trackingsj_id]);
+                await dbClient.query(`DELETE FROM adw_group_sj WHERE adw_trackingsj_id = $1`, [adw_trackingsj_id]);
+                await dbClient.query(`DELETE FROM adw_trackingsj WHERE adw_trackingsj_id = $1`, [adw_trackingsj_id]);
                 await dbClient.query('COMMIT');
 
-                return {
-                    success: true,
-                    message: "Checkpoint 2 → Data dihapus seluruhnya",
-                    data: null
-                };
+                return { success: true, message: "Checkpoint 2 → Data dihapus seluruhnya", data: null };
             }
 
+            // ==========================================================
+            //  CASE 2: REVERT STATUS (Checkpoint Lain)
+            // ==========================================================
 
-            // QUERY 1: Delete events HANDOVER where event checkpoint = t.checkpoin_id - 1
-            const deleteHoEventsQuery = `
+            // Hapus events
+            const deleteAllEvent = `
             DELETE FROM adw_trackingsj_events ate
             USING adw_trackingsj t
             WHERE ate.adw_trackingsj_id = t.adw_trackingsj_id
               AND t.adw_trackingsj_id = $1
-              AND ate.adw_event_type = 'HANDOVER'
-              AND CAST(ate.checkpoin_id AS INTEGER) = (CAST(t.checkpoin_id AS INTEGER)-1)
         `;
-            await dbClient.query(deleteHoEventsQuery, [adw_trackingsj_id]);
+            await dbClient.query(deleteAllEvent, [adw_trackingsj_id]);
 
-            const deleteAccEventsQuery = `
-            DELETE FROM adw_trackingsj_events ate
-            USING adw_trackingsj t
-            WHERE ate.adw_trackingsj_id = t.adw_trackingsj_id
-              AND t.adw_trackingsj_id = $1
-              AND ate.adw_event_type = 'ACCEPTANCE'
-              AND CAST(ate.checkpoin_id AS INTEGER) = CAST(t.checkpoin_id AS INTEGER)
-        `;
-            await dbClient.query(deleteAccEventsQuery, [adw_trackingsj_id]);
-
-
-            // const getGroupIdQuery = `
-            //     SELECT adw_handover_group_id 
-            //     FROM adw_group_sj 
-            //     WHERE adw_trackingsj_id = $1
-            //     AND CAST(checkpoint AS INTEGER) = (CAST((SELECT checkpoin_id FROM adw_trackingsj WHERE adw_trackingsj_id = $1) AS INTEGER)-1)
-            // `;
-            // const groupIdRes = await dbClient.query(getGroupIdQuery, [adw_trackingsj_id]);
-
-            // const groupId = groupIdRes.rows[0]?.adw_handover_group_id || null;
-
-
-
-            // Hapus pivot sesuai checkpoint
-            // await dbClient.query(`
-            //     DELETE FROM adw_group_sj ags
-            //     USING adw_trackingsj t
-            //     WHERE ags.adw_trackingsj_id = t.adw_trackingsj_id
-            //     AND ags.adw_trackingsj_id = $1
-            //     AND CAST(ags.checkpoint AS INTEGER) = (CAST(t.checkpoin_id AS INTEGER) - 1);
-            // `, [adw_trackingsj_id]);
-
-            // if (groupId) {
-            //     const checkRelationQuery = `
-            //         SELECT COUNT(*) AS total
-            //         FROM adw_group_sj
-            //         WHERE adw_handover_group_id = $1
-            //     `;
-            //     const checkRel = await dbClient.query(checkRelationQuery, [groupId]);
-
-            //     if (Number(checkRel.rows[0].total) === 0) {
-            //         await dbClient.query(
-            //             `DELETE FROM adw_handover_group WHERE adw_handover_group_id = $1`,
-            //             [groupId]
-            //         );
-            //     }
-            // }
-
-            // QUERY 3: Update t.checkpoin_id - 1
+            // Update Status Utama
             const updateQuery = `
             UPDATE adw_trackingsj
-                SET checkpoin_id = (CAST(checkpoin_id AS INTEGER) - 2)::varchar, 
-                cancelrequest = 'N',
-                canceled = 'Y'
+            SET checkpoin_id = '1', cancelrequest = 'N', canceled = 'Y'
             WHERE adw_trackingsj_id = $1
             RETURNING *;
         `;
-            const updated = await dbClient.query(updateQuery, [adw_trackingsj_id]);
+            const updatedRes = await dbClient.query(updateQuery, [adw_trackingsj_id]);
+            const updatedData = updatedRes.rows[0];
 
-            // console.log('updated : ', updated);
+            // ==========================================================
+            //  LOGIKA PROSES BUNDLE PDF (Sequential & Reusable)
+            // ==========================================================
+            if (updatedData) {
 
-
-
-
-            if (updated) {
-                const bundleQuery = `
-                SELECT ahg.documentno bundleno, ahg.attachment 
-                FROM adw_handover_group ahg 
-                WHERE ahg.adw_handover_group_id =
-                            (SELECT MAX(ags.adw_handover_group_id) 
-                            FROM adw_group_sj ags 
-                            WHERE ags.adw_trackingsj_id = $1)`
-                const bundleRes = await dbClient.query(bundleQuery, [adw_trackingsj_id]);
-
-                const bundle = bundleRes.rows[0];
-
-                const { listShipment, dataUser, bundleNo, bundleCheckpoint, dateHandover } = await this.listBundleDetailPDF(dbClient, bundle.bundleno)
-                const payload = {
-                    listShipment,
-                    dataUser,
-                    bundleNo,
-                    bundleCheckpoint,
-                    dateHandover
-                }
-
-                const { fileName } = await this.generateHandoverPdf(payload, fromActor, toActor)
-
-
-                if (fileName) {
-                    const updateHandoverGroupAttachment = `
-                    UPDATE adw_handover_group
-                    SET 
-                        updated = NOW(),
-                        attachment = $1
-                    WHERE documentno = $2
+                // --- Helper Function Internal (Agar kodingan tidak duplikat) ---
+                const processBundleAttachment = async (targetId, sqlQuerySelector, pdfLabel1, pdfLabel2) => {
+                    // 1. Cari Bundle
+                    const bundleQuery = `
+                    SELECT ahg.documentno bundleno, ahg.attachment 
+                    FROM adw_handover_group ahg 
+                    WHERE ahg.adw_handover_group_id = (
+                        SELECT ${sqlQuerySelector}(ags.adw_handover_group_id) 
+                        FROM adw_group_sj ags 
+                        WHERE ags.adw_trackingsj_id = $1
+                    )
                 `;
-                    const updateAttachment = await dbClient.query(updateHandoverGroupAttachment, [
-                        fileName,
-                        bundle.bundleno
-                    ]);
+                    const bundleRes = await dbClient.query(bundleQuery, [targetId]);
 
-                    // Jika update berhasil → hapus file lama
-                    if (updateAttachment && bundle?.attachment) {
-                        const oldFilePath = path.join(
-                            process.cwd(),
-                            'uploads',
-                            'handover',
-                            bundle.attachment
-                        );
+                    if (bundleRes.rowCount === 0) return; // Skip jika tidak ada data
 
-                        if (fs.existsSync(oldFilePath)) {
-                            try {
-                                fs.unlinkSync(oldFilePath);
-                                console.log(`Attachment deleted: ${bundle.attachment}`);
-                            } catch (err) {
-                                console.error("Error deleting attachment:", err);
+                    const bundle = bundleRes.rows[0];
+
+                    // 2. Generate PDF Baru
+                    const { listShipment, dataUser, bundleNo, bundleCheckpoint, dateHandover } = await this.listBundleDetailPDF(dbClient, bundle.bundleno);
+
+                    const pdfPayload = { listShipment, dataUser, bundleNo, bundleCheckpoint, dateHandover };
+                    const { fileName } = await this.generateHandoverPdf(pdfPayload, pdfLabel1, pdfLabel2);
+
+                    if (fileName) {
+                        // 3. Update Database dengan Filename Baru
+                        const updateAttachmentQuery = `
+                        UPDATE adw_handover_group
+                        SET updated = NOW(), attachment = $1
+                        WHERE documentno = $2
+                    `;
+                        await dbClient.query(updateAttachmentQuery, [fileName, bundle.bundleno]);
+
+                        // 4. Hapus File Lama (Cleanup)
+                        if (bundle.attachment && bundle.attachment !== fileName) {
+                            const oldFilePath = path.join(process.cwd(), 'uploads', 'handover', bundle.attachment);
+                            if (fs.existsSync(oldFilePath)) {
+                                try {
+                                    fs.unlinkSync(oldFilePath);
+                                    console.log(`Attachment deleted: ${bundle.attachment}`);
+                                } catch (err) {
+                                    console.error("Error deleting attachment:", err);
+                                }
                             }
-                        } else {
-                            console.log("Attachment file not found:", oldFilePath);
                         }
                     }
-                }
+                };
+
+                // --- EKSEKUSI BERURUTAN (SEQUENTIAL) ---
+
+                // JALANKAN QUERY 1 DULU (MAX)
+                // Param: ID, SQL Aggregator, Label1, Label2
+                await processBundleAttachment(adw_trackingsj_id, 'MAX', "DPK", "Driver");
+
+                // SETELAH DI ATAS SELESAI, BARU JALANKAN QUERY 2 (MIN)
+                await processBundleAttachment(adw_trackingsj_id, 'MIN', "Delivery", "DPK");
+
             }
-
-
-
-
 
             await dbClient.query('COMMIT');
 
             return {
                 success: true,
                 message: 'Data berhasil di-reject',
-                data: updated.rows[0]
+                data: updatedData
             };
-        } catch (error) {
-            console.error('Error reject:', error);
-            return [];
-        } finally {
 
+        } catch (error) {
+            // PENTING: Rollback jika ada error agar data tidak corrupt
+            if (dbClient) await dbClient.query('ROLLBACK');
+
+            console.error('Error reject:', error);
+            throw error; // Atau return sesuai format error handling Anda
+        } finally {
             if (dbClient) await dbClient.release();
-            if (oracleConnection) await oracleConnection.close();
         }
     }
 

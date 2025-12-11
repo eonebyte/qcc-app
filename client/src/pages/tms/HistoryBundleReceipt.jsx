@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Tabs, Card, notification, Tag, Modal, Spin, message } from "antd";
-import { AndroidOutlined, AppleOutlined, DownloadOutlined, PrinterOutlined, SearchOutlined, SyncOutlined } from "@ant-design/icons";
+import { Table, Button, Tabs, Card, notification, Tag, Modal, Spin, message, Popover } from "antd";
+import { AndroidOutlined, AppleOutlined, CheckCircleOutlined, DownloadOutlined, HourglassOutlined, PrinterOutlined, SearchOutlined, SyncOutlined } from "@ant-design/icons";
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import * as XLSX from "xlsx";
@@ -127,7 +127,8 @@ const HistoryBundleReceipt = () => {
                 created: item.created,
                 received: item.received,
                 total_shipments: item.total_shipments,
-                attachment: item.attachment
+                attachment: item.attachment,
+                fromactor: item.fromactor,
             }));
 
             console.log('mapped : ', mapped);
@@ -314,6 +315,11 @@ const HistoryBundleReceipt = () => {
             ),
         },
         {
+            title: "From",
+            dataIndex: "fromactor",
+            align: "center",
+        },
+        {
             title: "Total Shipments",
             dataIndex: "total_shipments",
             align: "center",
@@ -341,12 +347,16 @@ const HistoryBundleReceipt = () => {
 
                 if (waiting) {
                     return (
-                        <Tag color="gold">Waiting Receipt</Tag>
+                        <Popover content={"Waiting"}>
+                            <Tag color="gold"><HourglassOutlined /></Tag>
+                        </Popover>
                     );
                 }
 
                 return (
-                    <Tag color="green">Completed</Tag>
+                    <Popover content={"Completed"}>
+                        <Tag color="green"><CheckCircleOutlined /></Tag>
+                    </Popover>
                 );
             }
         },
@@ -357,12 +367,11 @@ const HistoryBundleReceipt = () => {
             render: (text, record) => (
                 <Button
                     icon={<PrinterOutlined />}
-                    type="primary"
+                    type="default"
                     onClick={() => handlePrint(record)}
                     loading={processingPdf} // Loading saat fetch & edit pdf
                     disabled={loading}
                 >
-                    Print
                 </Button>
             )
         }

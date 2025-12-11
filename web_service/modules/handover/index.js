@@ -95,39 +95,67 @@ class Handover {
 
             // 3. Query untuk mengambil SEMUA ID yang sudah pernah tercatat di PostgreSQL
             // Asumsi: jika ID sudah ada, berarti sudah diproses dan tidak perlu ditampilkan lagi.
-            const queryPostgres = `SELECT m_inout_id, checkpoin_id FROM adw_trackingsj`;
+            const queryPostgres = `SELECT adw_trackingsj_id, m_inout_id, checkpoin_id, cancelrequest FROM adw_trackingsj`;
             const resultPg = await dbClient.query(queryPostgres);
 
             // 4. Buat Set dari ID yang sudah ada, jangan lupa konversi ke STRING
+            // Buat Map berisi: id → { checkpoint, cancelrequest }
             const existingTrackingData = new Map(
-                resultPg.rows.map(row => [String(row.m_inout_id), row.checkpoin_id])
+                resultPg.rows.map(row => [
+                    String(row.m_inout_id),
+                    {
+                        checkpoint: row.checkpoin_id,
+                        cancelrequest: row.cancelrequest,
+                        adw_trackingsj_id: row.adw_trackingsj_id,
+                    }
+                ])
             );
+
 
             // 5. Filter hasil dari Oracle DENGAN LOGIKA DIBALIK (!)
             // Hanya simpan baris dari Oracle yang ID-nya TIDAK ADA (!) di dalam Set.
             const filteredData = oracleRows.filter(oracleRow => {
                 const oracleId = String(oracleRow.M_INOUT_ID);
 
-                // Cek apakah ID dari Oracle ada di dalam data tracking
                 if (existingTrackingData.has(oracleId)) {
-                    // Jika ada, periksa apakah checkpoin_id nya adalah 9.
-                    // Data akan ditampilkan HANYA JIKA kondisinya true.
-                    // (Menggunakan == 9 agar bisa menangani tipe data number atau string '9')
-                    return existingTrackingData.get(oracleId) == 9;
-                } else {
-                    // Jika tidak ada, berarti ini data baru, jadi kita tampilkan.
-                    return true;
+                    const data = existingTrackingData.get(oracleId);
+                    const cp = data.checkpoint;
+                    const cr = data.cancelrequest;
+
+                    // checkpoint 1 → tampil
+                    if (cp == 1) return true;
+
+                    // checkpoint 9 → tampil
+                    if (cp == 9) return true;
+
+                    // checkpoint 5 → tampil hanya jika cancelrequest = 'Y'
+                    if (cp == 5 && cr === 'Y') return true;
+
+                    // selain itu → jangan tampil
+                    return false;
                 }
+
+                // data baru → tampil
+                return true;
             });
+
+
             const mappingData = filteredData.map(row => {
                 const oracleId = String(row.M_INOUT_ID);
-                const checkpointId = existingTrackingData.get(oracleId) ?? 1;
+                const tracking = existingTrackingData.get(oracleId);
+
+                const checkpointId = tracking?.checkpoint ?? 1;
+                const cancelReq = tracking?.cancelrequest ?? 'N';
+                const trackId = tracking?.adw_trackingsj_id ?? null;
                 return {
                     m_inout_id: row.M_INOUT_ID,
                     documentno: row.DOCUMENTNO,
                     customer: row.CUSTOMER,
                     plantime: row.PLANTIME,
                     checkpoin_id: Number(checkpointId),
+                    cancelrequest: cancelReq,
+                    adw_trackingsj_id: trackId
+
                 }
             })
 
@@ -227,10 +255,7 @@ class Handover {
             const queryPostgres = `
                 SELECT adw_trackingsj_id, m_inout_id, checkpoin_id, cancelrequest
                 FROM adw_trackingsj
-                WHERE 
-                    (checkpoin_id = '3' AND cancelrequest = 'N')
-                    OR
-                    (checkpoin_id = '5' AND cancelrequest = 'Y')
+                WHERE checkpoin_id = '3' AND cancelrequest = 'N'
             `;
 
             const resultPg = await dbClient.query(queryPostgres);
@@ -332,8 +357,9 @@ class Handover {
             // Insert group
             const insertGroupQuery = `
                         INSERT INTO adw_handover_group (
-                            createdby, documentno, checkpoint, notes
-                        ) VALUES ($1, $2, $3, $4)
+                            createdby, documentno, checkpoint, notes,
+                            fromactor, toactor
+                        ) VALUES ($1, $2, $3, $4, $5, $6)
                         RETURNING adw_handover_group_id;
                     `;
 
@@ -341,7 +367,9 @@ class Handover {
                 userId,
                 documentno,
                 '2',
-                'ho delivery to dpk'
+                'ho delivery to dpk',
+                'Delivery',
+                'DPK'
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -464,8 +492,9 @@ class Handover {
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes
-            ) VALUES ($1, $2, $3, $4)
+                createdby, documentno, checkpoint, notes,
+                fromactor, toactor
+            ) VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING adw_handover_group_id;
         `;
 
@@ -473,7 +502,9 @@ class Handover {
                 userId,
                 documentno,
                 '4',
-                'handover dpk ke driver'
+                'ho dpk to driver',
+                'DPK',
+                'Driver'
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -879,8 +910,9 @@ class Handover {
 
                 const insertGroupQuery = `
                 INSERT INTO adw_handover_group (
-                    createdby, documentno, checkpoint, notes, drivername, tnkb_id
-                ) VALUES ($1, $2, $3, $4, $5, $6)
+                    createdby, documentno, checkpoint, notes, drivername, tnkb_id,
+                    fromactor, toactor
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING adw_handover_group_id;
             `;
 
@@ -888,9 +920,11 @@ class Handover {
                     0,
                     documentno,
                     '6',
-                    'handover driver ke dpk',
+                    'ho driver to dpk',
                     driverName,
-                    tnkbId
+                    tnkbId,
+                    'Driver',
+                    'DPK'
                 ]);
 
                 const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -1005,8 +1039,9 @@ class Handover {
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes, drivername, tnkb_id
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                createdby, documentno, checkpoint, notes, drivername, tnkb_id,
+                fromactor, toactor
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING adw_handover_group_id;
         `;
 
@@ -1016,7 +1051,9 @@ class Handover {
                 '6',
                 'handover driver ke dpk',
                 driverName,
-                tnkbId
+                tnkbId,
+                'Driver',
+                'DPK'
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -1251,8 +1288,9 @@ class Handover {
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes, driverby, tnkb_id
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                createdby, documentno, checkpoint, notes, driverby, tnkb_id,
+                fromactor, toactor
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING adw_handover_group_id;
         `;
 
@@ -1262,7 +1300,9 @@ class Handover {
                 '8',
                 'handover dpk ke delivery',
                 driverId,
-                tnkbId
+                tnkbId,
+                'DPK',
+                'Delivery'
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -1498,8 +1538,9 @@ class Handover {
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes, driverby, tnkb_id
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                createdby, documentno, checkpoint, notes, driverby, tnkb_id,
+                fromactor, toactor
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING adw_handover_group_id;
         `;
 
@@ -1509,7 +1550,9 @@ class Handover {
                 '10',
                 'handover delivery ke mkt',
                 driverId,
-                tnkbId
+                tnkbId,
+                'Delivery',
+                'Marketing'
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;
@@ -1748,8 +1791,9 @@ class Handover {
 
             const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes, driverby, tnkb_id, sppno
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                createdby, documentno, checkpoint, notes, driverby, tnkb_id, sppno,
+                fromactor, toactor
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING adw_handover_group_id;
         `;
 
@@ -1760,7 +1804,9 @@ class Handover {
                 'handover mkt ke fat',
                 driverId,
                 tnkbId,
-                sppNo
+                sppNo,
+                'Marketing',
+                'FAT'
             ]);
 
             const groupId = groupRes.rows[0].adw_handover_group_id;

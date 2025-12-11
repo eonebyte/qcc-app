@@ -498,7 +498,7 @@ export default function CheckOut() {
             dataIndex: "plantime",
             key: "plantime",
             ...getColumnSearchProps("plantime"),
-            render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
+            render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-',
         },
     ];
 

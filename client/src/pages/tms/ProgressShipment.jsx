@@ -524,7 +524,6 @@ const ProgressShipment = () => {
                         icon={<DownloadOutlined />}
                         onClick={handleExportExcel}
                         loading={exportLoading}
-                        style={{ backgroundColor: '#217346', color: 'white', borderColor: '#217346' }}
                     >
                     </Button>
                 </Space>

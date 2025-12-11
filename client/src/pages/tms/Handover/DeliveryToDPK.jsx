@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Button, Input, Space, Table, Modal, message, DatePicker } from "antd";
+import { Button, Input, Space, Table, Modal, message, DatePicker, notification } from "antd";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
-import { SearchOutlined, SendOutlined, SyncOutlined } from "@ant-design/icons";
+import { CheckOutlined, CloseOutlined, SearchOutlined, SendOutlined, SyncOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
+import axios from "axios";
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
@@ -18,6 +19,14 @@ export default function DeliveryToDPK() {
         current: 1,
         pageSize: 10
     });
+
+    const [isModalConfirmOpen, setIsModalConfirmopen] = useState(false);
+    const [itemToConfirm, setItemToConfirm] = useState(null);
+
+    const [isModalRejectCancelOpen, setIsModalRejectCancelopen] = useState(false);
+    const [itemToRejectCancel, setItemToRejectCancel] = useState(null);
+
+
 
     const [dateRange, setDateRange] = useState([null, null]);
 
@@ -128,6 +137,69 @@ export default function DeliveryToDPK() {
             ),
     });
 
+    const showModalConfirm = (shipment) => {
+        setItemToConfirm(shipment);
+        setIsModalConfirmopen(true);
+    };
+
+    const showModalRejectCancel = (shipment) => {
+        setItemToRejectCancel(shipment);
+        setIsModalRejectCancelopen(true);
+    };
+
+
+    const handleConfirmOk = async () => {
+        try {
+
+            const res = await axios.post(`${backEndUrl}/tms/cancel`, itemToConfirm, { withCredentials: true });
+
+            if (res.data.success) {
+                notification.success({ message: 'Info', description: `Dokumen ${itemToConfirm.documentno} akan diproses untuk dicancel.` });
+                fetchData();
+            } else {
+                notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
+            }
+        } catch (error) {
+            console.error("Submit error:", error);
+            notification.error({ message: 'cancel Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
+        } finally {
+            setIsModalConfirmopen(false);
+            setItemToConfirm(null);
+        }
+    };
+
+    const handleConfirmClose = () => {
+        setIsModalConfirmopen(false);
+        setItemToConfirm(null);
+    };
+
+    const handleRejectCancelOk = async () => {
+        console.log("reject canceling item:", itemToRejectCancel);
+        try {
+
+            const res = await axios.post(`${backEndUrl}/tms/reject/req/cancel`, itemToRejectCancel, { withCredentials: true });
+
+            if (res.data.success) {
+                notification.success({ message: 'Info', description: `Dokumen ${itemToRejectCancel.documentno} akan diproses untuk dicancel.` });
+                fetchData();
+            } else {
+                notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
+            }
+        } catch (error) {
+            console.error("Submit error:", error);
+            notification.error({ message: 'cancel Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
+        } finally {
+            setIsModalRejectCancelopen(false);
+            setItemToRejectCancel(null);
+        }
+    };
+
+    const handleRejectCancelClose = () => {
+        setIsModalConfirmopen(false);
+        setItemToConfirm(null);
+    };
+
+
     // ================== TABLE COLUMNS ==================
     const columns = [
         {
@@ -159,6 +231,32 @@ export default function DeliveryToDPK() {
             ...getColumnSearchProps("plantime"),
             render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-',
         },
+        {
+            title: "Actions",
+            key: "actions",
+            width: 120,
+            render: (_, record) => {
+                console.log('tesss : ', record);
+                if (record.checkpoin_id == '5') {
+                    if (record.cancelrequest == 'Y') {
+                        return (<Space>
+                            <Button onClick={() => showModalConfirm(record)}
+                                icon={<CheckOutlined />} size='small' color="cyan" variant="outlined">Confirm Cancel</Button>
+                            <Button onClick={() => showModalRejectCancel(record)}
+                                icon={<CloseOutlined />} size='small' danger>Reject</Button>
+                        </Space>)
+                    } else {
+                        return (<Tag color={"warning"} variant={'solid'}>
+                            Waiting
+                        </Tag>)
+                    }
+                } else {
+                    return '-'
+                }
+
+
+            }
+        }
     ];
 
     // ================== FETCH DATA API ==================
@@ -181,12 +279,17 @@ export default function DeliveryToDPK() {
             const mapped = json.data.data.map((row, index) => ({
                 key: row.m_inout_id,
                 m_inout_id: row.m_inout_id,
+                adw_trackingsj_id: row.adw_trackingsj_id,
                 no: index + 1,
                 documentno: row.documentno,
                 customer: row.customer,
                 plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
                 checkpoin_id: row.checkpoin_id,
+                cancelrequest: row.cancelrequest,
             }));
+
+            console.log('mapped : ', mapped);
+
 
             setTableData(mapped);
         } catch (err) {
@@ -302,7 +405,7 @@ export default function DeliveryToDPK() {
             {/* BUTTON HANDOVER */}
             <div style={{ marginTop: 16 }}>
                 <Button
-                    style={{margin: 15}}
+                    style={{ margin: 15 }}
                     type="primary"
                     disabled={selectedRows.length === 0}
                     onClick={openHandoverModal}
@@ -328,6 +431,24 @@ export default function DeliveryToDPK() {
                         <li key={r.key}>{r.documentno}</li>
                     ))}
                 </ul>
+            </Modal>
+
+            <Modal
+                title="Confirm"
+                open={isModalConfirmOpen}
+                onOk={handleConfirmOk}
+                onCancel={handleConfirmClose}
+            >
+                <p>Apakah Anda yakin akan confirm dokumen <strong>{itemToConfirm?.documentno}</strong>?</p>
+            </Modal>
+
+            <Modal
+                title="Confirm cancel"
+                open={isModalRejectCancelOpen}
+                onOk={handleRejectCancelOk}
+                onCancel={handleRejectCancelClose}
+            >
+                <p>Apakah Anda yakin akan reject cancel dokumen <strong>{itemToRejectCancel?.documentno}</strong>?</p>
             </Modal>
         </LayoutGlobal>
     );

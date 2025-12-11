@@ -127,15 +127,15 @@ export default function DPKToDriver() {
             ),
     });
 
-    const showModalConfirm = (shipment) => {
-        setItemToConfirm(shipment);
-        setIsModalConfirmopen(true);
-    };
+    // const showModalConfirm = (shipment) => {
+    //     setItemToConfirm(shipment);
+    //     setIsModalConfirmopen(true);
+    // };
 
-    const showModalRejectCancel = (shipment) => {
-        setItemToRejectCancel(shipment);
-        setIsModalRejectCancelopen(true);
-    };
+    // const showModalRejectCancel = (shipment) => {
+    //     setItemToRejectCancel(shipment);
+    //     setIsModalRejectCancelopen(true);
+    // };
 
     // ================== TABLE COLUMNS ==================
     const columns = [
@@ -168,32 +168,32 @@ export default function DPKToDriver() {
             ...getColumnSearchProps("plantime"),
             render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-',
         },
-        {
-            title: "Actions",
-            key: "actions",
-            width: 120,
-            render: (_, record) => {
-                console.log('tesss : ', record);
-                if (record.checkpoin_id == '5') {
-                    if (record.cancelrequest == 'Y') {
-                        return (<Space>
-                            <Button onClick={() => showModalConfirm(record)}
-                                icon={<CheckOutlined />} size='small' color="cyan" variant="outlined">Confirm Cancel</Button>
-                            <Button onClick={() => showModalRejectCancel(record)}
-                                icon={<CloseOutlined />} size='small' danger>Reject</Button>
-                        </Space>)
-                    } else {
-                        return (<Tag color={"warning"} variant={'solid'}>
-                            Waiting
-                        </Tag>)
-                    }
-                } else {
-                    return '-'
-                }
+        // {
+        //     title: "Actions",
+        //     key: "actions",
+        //     width: 120,
+        //     render: (_, record) => {
+        //         console.log('tesss : ', record);
+        //         if (record.checkpoin_id == '5') {
+        //             if (record.cancelrequest == 'Y') {
+        //                 return (<Space>
+        //                     <Button onClick={() => showModalConfirm(record)}
+        //                         icon={<CheckOutlined />} size='small' color="cyan" variant="outlined">Confirm Cancel</Button>
+        //                     <Button onClick={() => showModalRejectCancel(record)}
+        //                         icon={<CloseOutlined />} size='small' danger>Reject</Button>
+        //                 </Space>)
+        //             } else {
+        //                 return (<Tag color={"warning"} variant={'solid'}>
+        //                     Waiting
+        //                 </Tag>)
+        //             }
+        //         } else {
+        //             return '-'
+        //         }
 
 
-            }
-        }
+        //     }
+        // }
     ];
 
     // ================== FETCH DATA API ==================

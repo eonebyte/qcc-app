@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Tabs, Card, notification, Badge, Tag, Modal, Spin, message } from "antd";
-import { AndroidOutlined, AppleOutlined, DownloadOutlined, FileSyncOutlined, PrinterOutlined, SearchOutlined, SyncOutlined } from "@ant-design/icons";
+import { Table, Button, Tabs, Card, notification, Badge, Tag, Modal, Spin, message, Popover } from "antd";
+import { AndroidOutlined, AppleOutlined, CheckCircleOutlined, DownloadOutlined, FileSyncOutlined, HourglassOutlined, PrinterOutlined, SearchOutlined, SyncOutlined } from "@ant-design/icons";
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import * as XLSX from "xlsx";
@@ -30,6 +30,8 @@ const HistoryBundleHandover = () => {
     const role = user.title;
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
+
+    const [sjData, setSjData] = useState({});
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [pdfBlobUrl, setPdfBlobUrl] = useState(null); // URL untuk iframe
@@ -81,6 +83,25 @@ const HistoryBundleHandover = () => {
     }
 
 
+    const loadSJ = async (bundleId) => {
+        if (sjData[bundleId]) return sjData[bundleId]; // sudah ada, return dari state
+
+        const res = await fetch(`${backEndUrl}/tms/listbundle/${bundleId}/sj`, {
+            credentials: "include"
+        });
+
+        const json = await res.json();
+
+        setSjData(prev => ({
+            ...prev,
+            [bundleId]: json.data
+        }));
+
+        return json.data; // <-- kunci supaya Promise.all punya hasil
+    };
+
+
+
     const loadData = async () => {
         try {
             setLoading(true)
@@ -98,7 +119,8 @@ const HistoryBundleHandover = () => {
                 received: item.received,
                 receivedby: item.receivedby,
                 total_shipments: item.total_shipments,
-                attachment: item.attachment
+                attachment: item.attachment,
+                toactor: item.toactor,
             }));
 
             setData(mapped);
@@ -245,6 +267,11 @@ const HistoryBundleHandover = () => {
             ),
         },
         {
+            title: "To",
+            dataIndex: "toactor",
+            align: "center",
+        },
+        {
             title: "Total Shipments",
             dataIndex: "total_shipments",
             align: "center",
@@ -272,12 +299,16 @@ const HistoryBundleHandover = () => {
 
                 if (waiting) {
                     return (
-                        <Tag color="gold">Waiting Receipt</Tag>
+                        <Popover content={"Waiting"}>
+                            <Tag color="gold"><HourglassOutlined /></Tag>
+                        </Popover>
                     );
                 }
 
                 return (
-                    <Tag color="green">Completed</Tag>
+                    <Popover content={"Completed"}>
+                        <Tag color="green"><CheckCircleOutlined /></Tag>
+                    </Popover>
                 );
             }
         },
@@ -288,16 +319,41 @@ const HistoryBundleHandover = () => {
             render: (text, record) => (
                 <Button
                     icon={<PrinterOutlined />}
-                    type="primary"
+                    type="default"
                     onClick={() => handlePrint(record)}
                     loading={processingPdf} // Loading saat fetch & edit pdf
                     disabled={loading}
                 >
-                    Print
                 </Button>
             )
         }
     ];
+
+    const expandedRow = (record) => {
+        const rows = sjData[record.key];
+
+        if (!rows) {
+            return <div style={{ padding: 20 }}>Loading SJ...</div>;
+        }
+
+        return (
+            <div style={{ padding: "5px 25px" }}>
+                <Table
+                    columns={[
+                        { title: "SJ No", dataIndex: "documentno" },
+                        { title: "Driver", dataIndex: "drivername" },
+                    ]}
+                    dataSource={rows.map(r => ({ ...r, key: r.adw_trackingsj_id }))}
+                    pagination={false}
+                    size="small"
+                    bordered  // <-- Kelihatan lebih rapi
+                    style={{ margin: 0 }}
+                    scroll={{ x: "max-content" }}
+                />
+            </div>
+        );
+
+    };
 
     return (
         <>
@@ -334,6 +390,12 @@ const HistoryBundleHandover = () => {
                 columns={columns}
                 dataSource={data}
                 pagination={{ pageSize: 10 }}
+                expandable={{
+                    expandedRowRender: (record) => expandedRow(record),
+                    onExpand: (expanded, record) => {
+                        if (expanded) loadSJ(record.key);
+                    },
+                }}
             />
             <Modal
                 styles={{ content: { padding: 10 } }}
