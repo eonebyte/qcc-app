@@ -1,49 +1,46 @@
-import { build } from './app.js'
-import closeWithGrace from 'close-with-grace'
-import dotenv from 'dotenv'
-import fs from 'fs';
-import { join } from 'desm'
+import { build } from "./app.js";
+import closeWithGrace from "close-with-grace";
+import dotenv from "dotenv";
+import fs from "fs";
+import { join } from "desm";
 
-dotenv.config()
-
+dotenv.config();
 
 const ISPROD = process.env.ISPROD;
 
 const opts = {
-    logger: {
-        level: 'info'
-    }
-}
+  logger: {
+    level: "info",
+  },
+};
 
-if (ISPROD === 'Y') {
-    opts.https = {
-        key: fs.readFileSync(join(import.meta.url, 'ssl', 'adyawinsa.com.key')),
-        cert: fs.readFileSync(join(import.meta.url, 'ssl', 'sectigo_adyawinsa.com.crt')),
-    };
-    console.log('Running in PRODUCTION mode -> HTTPS enabled');
-} else {
-    console.log('Running in DEVELOPMENT mode -> HTTP only (no SSL)');
-}
+// if (ISPROD === 'Y') {
+//     opts.https = {
+//         key: fs.readFileSync(join(import.meta.url, 'ssl', 'adyawinsa.com.key')),
+//         cert: fs.readFileSync(join(import.meta.url, 'ssl', 'sectigo_adyawinsa.com.crt')),
+//     };
+//     console.log('Running in PRODUCTION mode -> HTTPS enabled');
+// } else {
+//     console.log('Running in DEVELOPMENT mode -> HTTP only (no SSL)');
+// }
 
 // We want to use pino-pretty only if there is a human watching this,
 // otherwise we log as newline-delimited JSON.
-if (process.stdout.isTTY) {
-    opts.logger.transport = { target: 'pino-pretty' }
-}
-
-
+// if (process.stdout.isTTY) {
+//   opts.logger.transport = { target: "pino-pretty" };
+// }
 
 const port = process.env.BASE_PORT ? parseInt(process.env.BASE_PORT) : 3000;
-const host = process.env.BASE_URL || '127.0.0.1'
+const host = process.env.BASE_URL || "127.0.0.1";
 
-const app = await build(opts)
-console.log(app.printRoutes())
-await app.listen({ port, host })
+const app = await build(opts);
+console.log(app.printRoutes());
+await app.listen({ port, host });
 
 closeWithGrace(async ({ err }) => {
-    if (err) {
-        app.log.error({ err }, 'server closing due to error')
-    }
-    app.log.info('shutting down gracefully')
-    await app.close()
-})
+  if (err) {
+    app.log.error({ err }, "server closing due to error");
+  }
+  app.log.info("shutting down gracefully");
+  await app.close();
+});
