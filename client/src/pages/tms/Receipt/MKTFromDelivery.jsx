@@ -5,10 +5,13 @@ import axios from 'axios';
 import { DateTime } from 'luxon';
 import LayoutGlobal from '../../../components/layouts/LayoutGlobal';
 import { useSelector } from 'react-redux';
+import useIsMobile from '../../../hooks/useIsMobile';
+import MKTFromDeliveryMobile from './MKTFromDeliveryMobile';
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
 
 const MKTFromDelivery = () => {
+  const isMobile = useIsMobile();
     const user = useSelector((state) => state.auth.user);
     const userId = user.ad_user_id;
 
@@ -276,7 +279,7 @@ const MKTFromDelivery = () => {
     const totalShipmentsInSelectedBundles = selectedBundlesForSubmit.reduce((acc, bundle) => acc + bundle.shipments.length, 0);
 
 
-    return (
+    return isMobile ? <MKTFromDeliveryMobile /> : (
         <LayoutGlobal>
             <Table
                 columns={mainColumns}

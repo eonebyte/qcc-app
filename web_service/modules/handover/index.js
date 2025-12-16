@@ -1619,7 +1619,9 @@ class Handover {
                 checkpoin_id = $1,
                 updated = NOW(),
                 updatedby = $2,
-                trip_mode = 'RT'
+                trip_mode = 'RT',
+                canceledmkt = 'N',
+                notesmkt = null
             WHERE
                 m_inout_id = ANY($3::integer[])
                 AND checkpoin_id = $4

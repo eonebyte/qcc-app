@@ -1,35 +1,35 @@
-import { useDispatch, useSelector } from 'react-redux';
-import { useEffect } from 'react';
-import { checkAuthStatus } from './states/reducers/authSlice';
-import Login from './pages/auth/Login';
-import { Spin } from 'antd';
-import SupplyRawMaterial from './pages/sales/SupplyRawMaterial';
-import { Route, Routes } from 'react-router-dom';
-import Receipt from './pages/tms/Receipt';
-import ProgressShipment from './pages/tms/ProgressShipment';
-import ListHandover from './pages/tms/ListHandover';
-import Home from './pages/Home';
-import Outstanding from './pages/tms/Outstanding';
-import HistoryBundle from './pages/tms/HistoryBundle';
-import HistoryBundleDetail from './pages/tms/HistoryBundleDetail';
-import DeliveryToDPK from './pages/tms/Handover/DeliveryToDPK';
-import DPKFromDelivery from './pages/tms/Receipt/DPKFromDelivery';
-import DPKToDriver from './pages/tms/Handover/DPKToDriver';
-import DriverFromDPK from './pages/tms/Receipt/DriverFromDPK';
-import CheckInCustomer from './pages/tms/Handover/CheckInRoundTrip_archive';
-import CheckOut from './pages/tms/Handover/CheckOut';
-import DPKFromDriver from './pages/tms/Receipt/DPKFromDriver';
-import DPKToDelivery from './pages/tms/Handover/DPKToDelivery';
-import DeliveryFromDPK from './pages/tms/Receipt/DeliveryFromDPK';
-import DeliveryToMKT from './pages/tms/Handover/DeliveryToMKT';
-import MKTFromDelivery from './pages/tms/Receipt/MKTFromDelivery';
-import MKTToFAT from './pages/tms/Handover/MKTToFAT';
-import FATFromMKT from './pages/tms/Receipt/FATFromMKT';
-import SettingConfig from './pages/tms/SettingConfig';
-import DropOnly from './pages/tms/DropOnly';
-import CheckOutMobile from './pages/tms/Handover/CheckOutMobile';
-import CheckOutDropOnlyMobile from './pages/tms/Handover/CheckOutDropOnlyMobile';
-
+import { useDispatch, useSelector } from "react-redux";
+import { useEffect } from "react";
+import { checkAuthStatus } from "./states/reducers/authSlice";
+import Login from "./pages/auth/Login";
+import { Spin } from "antd";
+import SupplyRawMaterial from "./pages/sales/SupplyRawMaterial";
+import { Route, Routes } from "react-router-dom";
+import Receipt from "./pages/tms/Receipt";
+import ProgressShipment from "./pages/tms/ProgressShipment";
+import ListHandover from "./pages/tms/ListHandover";
+import Home from "./pages/Home";
+import Outstanding from "./pages/tms/Outstanding";
+import HistoryBundle from "./pages/tms/HistoryBundle";
+import HistoryBundleDetail from "./pages/tms/HistoryBundleDetail";
+import DeliveryToDPK from "./pages/tms/Handover/DeliveryToDPK";
+import DPKFromDelivery from "./pages/tms/Receipt/DPKFromDelivery";
+import DPKToDriver from "./pages/tms/Handover/DPKToDriver";
+import DriverFromDPK from "./pages/tms/Receipt/DriverFromDPK";
+import CheckInCustomer from "./pages/tms/Handover/CheckInRoundTrip_archive";
+import CheckOut from "./pages/tms/Handover/CheckOut";
+import DPKFromDriver from "./pages/tms/Receipt/DPKFromDriver";
+import DPKToDelivery from "./pages/tms/Handover/DPKToDelivery";
+import DeliveryFromDPK from "./pages/tms/Receipt/DeliveryFromDPK";
+import DeliveryToMKT from "./pages/tms/Handover/DeliveryToMKT";
+import MKTFromDelivery from "./pages/tms/Receipt/MKTFromDelivery";
+import MKTToFAT from "./pages/tms/Handover/MKTToFAT";
+import FATFromMKT from "./pages/tms/Receipt/FATFromMKT";
+import SettingConfig from "./pages/tms/SettingConfig";
+import DropOnly from "./pages/tms/DropOnly";
+import CheckOutMobile from "./pages/tms/Handover/CheckOutMobile";
+import CheckOutDropOnlyMobile from "./pages/tms/Handover/CheckOutDropOnlyMobile";
+import AccountMobile from "./pages/AccountMobile";
 
 function App() {
   const dispatch = useDispatch();
@@ -61,7 +61,7 @@ function App() {
       <Route path="/history" element={<HistoryBundle />} />
       <Route path="/history/detail" element={<HistoryBundleDetail />} />
       <Route path="/progress-shipment" element={<ProgressShipment />} />
-
+      <Route path="/account" element={<AccountMobile />} />
       {/* ========= NEW ====== */}
       <Route path="/handover/delivery/to/dpk" element={<DeliveryToDPK />} />
       <Route path="/receipt/dpk/from/delivery" element={<DPKFromDelivery />} />
@@ -84,10 +84,8 @@ function App() {
 
       <Route path="/checkout/mobile" element={<CheckOutMobile />} />
       <Route path="/checkout/mobile/do" element={<CheckOutDropOnlyMobile />} />
-
     </Routes>
   );
 }
 
 export default App;
-

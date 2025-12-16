@@ -1,126 +1,136 @@
-import { useState, useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
-import { SpinLoading, Toast, Grid } from 'antd-mobile';
-import { DeleteOutline } from 'antd-mobile-icons';
-import { login } from '../../states/reducers/authSlice';
-
-import './LoginMobile.css'; // Pastikan file CSS ini diimpor
-
-// ============================================================================
-// == KOMPONEN VISUAL (Tidak berubah banyak, hanya cara pemanggilannya nanti)
-// ============================================================================
-
-const PinDots = ({ pinLength, currentLength, isError }) => (
-    <div className={`pin-dots-container ${isError ? 'pin-error' : ''}`}>
-        {Array.from({ length: pinLength }).map((_, index) => (
-            <div
-                key={index}
-                className={`pin-dot ${index < currentLength ? 'pin-dot-filled' : 'pin-dot-empty'}`}
-            />
-        ))}
-    </div>
-);
-
-// --- PERBAIKAN 1: Hapus 'position: fixed' dari keyboard ---
-// Keyboard sekarang hanyalah sebuah blok biasa yang akan ditempatkan oleh parent-nya.
-const NeumorphicKeyboard = ({ onInput, onDelete }) => (
-    <div style={{
-        width: '100%',
-        padding: '16px 24px 48px 24px', // Padding bawah untuk safe area
-        backgroundColor: '#eef3f8', // Samakan dengan latar belakang utama
-        flexShrink: 0, // Mencegah keyboard menyusut
-    }}>
-        <Grid columns={3} gap={24}>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'spacer', 0, 'delete'].map(k => (
-                <Grid.Item key={k}>
-                    {k === 'spacer' ? <div style={{ height: '70px' }} /> :
-                        k === 'delete' ? <div className="keyboard-key-neumorphic" onClick={onDelete}><DeleteOutline fontSize={30} /></div> :
-                            <div className="keyboard-key-neumorphic" onClick={() => onInput(String(k))}>{k}</div>
-                    }
-                </Grid.Item>
-            ))}
-        </Grid>
-    </div>
-);
-
-// ============================================================================
-// == KOMPONEN LOGIN UTAMA DENGAN STRUKTUR LAYOUT YANG BENAR
-// ============================================================================
-const PIN_LENGTH = 6;
+import React from "react";
+import { Form, Input, Button, Toast, Card, AutoCenter } from "antd-mobile";
+import { UserOutline, LockOutline } from "antd-mobile-icons";
+import { useDispatch, useSelector } from "react-redux";
+import { login } from "../../states/reducers/authSlice"; // Sesuaikan path
+import { useNavigate } from "react-router-dom";
 
 export default function LoginMobile() {
-    const dispatch = useDispatch();
-    const navigate = useNavigate();
-    const isLoading = useSelector((state) => state.auth.isLoading);
-    const [pin, setPin] = useState('');
-    const [isError, setIsError] = useState(false);
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
 
-    // --- Logika Inti (tidak berubah) ---
-    const handleLoginAndNavigation = (payload) => { /* ... (Salin dari jawaban sebelumnya) */ };
-    useEffect(() => { /* ... (Salin dari jawaban sebelumnya) */ }, [pin]);
+  // Ambil loading state dari Redux
+  const isLoading = useSelector((state) => state.auth.isLoading);
 
-    // Salin lagi fungsi-fungsi ini untuk kelengkapan
-    const handleLoginAndNavigationImpl = (payload) => {
-        dispatch(login(payload)).then(result => {
-            if (result.payload && result.payload.success) {
-                Toast.show({ icon: 'success', content: 'Login Berhasil' });
-                if (payload.password) localStorage.setItem('username', payload.username);
-                navigate('/');
-            } else {
-                Toast.show({ icon: 'fail', content: result.payload?.message || 'PIN Salah' });
-                setPin('');
-                setIsError(true);
-                setTimeout(() => setIsError(false), 500);
-            }
+  const onFinish = async (values) => {
+    const { username, password } = values;
+
+    // Dispatch action login
+    dispatch(login({ username, password })).then(async (result) => {
+      if (result.payload && result.payload.success) {
+        Toast.show({
+          icon: "success",
+          content: "Login Berhasil",
         });
-    };
 
-    useEffect(() => {
-        if (pin.length === PIN_LENGTH) {
-            const savedUsername = localStorage.getItem('username');
-            if (!savedUsername) {
-                Toast.show({ content: 'Harap login dengan password terlebih dahulu.' });
-                setPin('');
-                return;
-            }
-            handleLoginAndNavigationImpl({ username: savedUsername, pin });
+        // Logic redirect berdasarkan Role (sama seperti web)
+        if (result.payload.user.title === "driver") {
+          navigate("/handover/checkin/customer");
+        } else {
+          navigate("/history");
         }
-    }, [pin]);
+      } else {
+        Toast.show({
+          icon: "fail",
+          content: result.payload ? result.payload.message : "Login Gagal",
+        });
+      }
+    });
+  };
 
-    return (
-        // --- PERBAIKAN 2: Container utama sekarang menjadi Flexbox Column yang membagi layar ---
-        <div className="login-container-neumorphic" style={{
-            display: 'flex',
-            flexDirection: 'column', // Anak-anaknya akan tersusun dari atas ke bawah
-            height: '100vh',
-            overflow: 'hidden', // Mencegah scroll yang tidak perlu
-        }}>
-            {isLoading && (<div style={{/* ... */ }}> <SpinLoading color='primary' /> </div>)}
-
-            {/* --- PERBAIKAN 3: Area Konten yang Fleksibel --- */}
-            {/* 'flex: 1' berarti area ini akan mengambil semua sisa ruang yang tersedia */}
-            <div style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center', // Pusatkan konten secara vertikal
-                alignItems: 'center',
-                textAlign: 'center',
-                padding: '20px'
-            }}>
-                <img src="/src/assets/images/logo-api.png" alt="Logo" style={{ width: '100px', marginBottom: '40px', opacity: 0.7 }} />
-                <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#3e4a61', margin: '0 0 40px 0' }}>
-                    Masukkan PIN Anda
-                </h1>
-                <PinDots pinLength={PIN_LENGTH} currentLength={pin.length} isError={isError} />
-            </div>
-
-            {/* Area Keyboard sekarang menjadi bagian dari flow normal, bukan overlay */}
-            <NeumorphicKeyboard
-                onInput={(key) => setPin(p => p.length < PIN_LENGTH ? p + key : p)}
-                onDelete={() => setPin(p => p.slice(0, -1))}
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f5f5f5",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: "20px",
+      }}
+    >
+      <Card
+        style={{
+          width: "100%",
+          borderRadius: 16,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+        }}
+      >
+        {/* LOGO AREA */}
+        <div style={{ marginBottom: 30, marginTop: 10 }}>
+          <AutoCenter>
+            <img
+              src="/sts.png"
+              alt="Logo"
+              style={{ width: "100px", maxWidth: "100%" }}
             />
+          </AutoCenter>
+          <div
+            style={{
+              textAlign: "center",
+              marginTop: 10,
+              color: "#666",
+              fontSize: 16,
+              fontWeight: 600,
+            }}
+          >
+            STS (Shipment Tracking System)
+          </div>
         </div>
-    );
+
+        {/* FORM LOGIN */}
+        <Form
+          layout="horizontal"
+          footer={
+            <Button
+              block
+              type="submit"
+              color="primary"
+              size="large"
+              loading={isLoading}
+              shape="rounded"
+              style={{ marginTop: 20 }}
+            >
+              Masuk
+            </Button>
+          }
+          onFinish={onFinish}
+        >
+          <Form.Item
+            name="username"
+            rules={[{ required: true, message: "Username wajib diisi!" }]}
+          >
+            <Input
+              placeholder="Username"
+              clearable
+              prefix={<UserOutline style={{ color: "#1677ff" }} />}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="password"
+            rules={[{ required: true, message: "Password wajib diisi!" }]}
+          >
+            <Input
+              placeholder="Password"
+              clearable
+              type="password"
+              prefix={<LockOutline style={{ color: "#1677ff" }} />}
+            />
+          </Form.Item>
+        </Form>
+
+        <div
+          style={{
+            textAlign: "center",
+            marginTop: 20,
+            fontSize: 12,
+            color: "#999",
+          }}
+        >
+          {/* Versi 1.0.0*/}
+        </div>
+      </Card>
+    </div>
+  );
 }

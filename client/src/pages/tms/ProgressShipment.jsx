@@ -177,6 +177,11 @@ const ProgressShipment = () => {
 
   const [filtersState, setFiltersState] = useState({});
 
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelLogs, setCancelLogs] = useState([]);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+
   const showTimelineModal = (record) => {
     setTimelineData({ docNo: record.docNo, flow: record.flow });
     setIsModalVisible(true);
@@ -209,7 +214,11 @@ const ProgressShipment = () => {
       const customer = item.customer;
       const planTime = item.plantime;
 
-      const notes = item.notes;
+      const has_cancel_log = item.has_cancel_log;
+
+      const adw_trackingsj_id = item.adw_trackingsj_id;
+
+      // const notes = item.notes;
       const iscancel = item.iscancel;
 
       const flow = stepDefinitions.map((step, stepIndex) => {
@@ -279,7 +288,9 @@ const ProgressShipment = () => {
         docNo: documentno,
         customer: customer,
         planTime: planTime,
-        notes: notes,
+        has_cancel_log: has_cancel_log,
+        adw_trackingsj_id: parseInt(adw_trackingsj_id),
+        // notes: notes,
         iscancel: iscancel,
         flow,
       };
@@ -322,8 +333,6 @@ const ProgressShipment = () => {
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const result = await res.json();
 
-      console.log("result api : ", result);
-
       // Robust parsing: terima banyak bentuk response
       let payload = [];
       let meta = {};
@@ -352,8 +361,6 @@ const ProgressShipment = () => {
 
       const transformed = transformApiData(payload, current, pageSize);
 
-      console.log("test data : ", transformed);
-
       setShipmentData(transformed);
 
       // determine total count from various possible keys
@@ -370,6 +377,35 @@ const ProgressShipment = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getMainStatus = (item) => {
+    if (item.has_cancel_log) return "CANCEL";
+
+    if (item.accept_fat_from_mkt) return "SELESAI (FAT)";
+    if (item.ho_mkt_to_fat) return "DI MARKETING";
+    if (item.accept_customer_from_driver) return "DITERIMA CUSTOMER";
+    if (item.ho_driver_to_customer) return "DI CUSTOMER";
+    if (item.ho_dpk_to_driver) return "DI DRIVER";
+
+    return "PROSES";
+  };
+
+  const getCancelSummary = (item) => {
+    if (!item.has_cancel_log) {
+      return {
+        cancel_reason: "-",
+        cancel_by: "-",
+        cancel_date: "-",
+      };
+    }
+
+    // fallback dari notes / notesmkt
+    return {
+      cancel_reason: item.notes || "-",
+      cancel_by: "SYSTEM",
+      cancel_date: "-",
+    };
   };
 
   // --- HANDLE EXPORT EXCEL ---
@@ -437,31 +473,16 @@ const ProgressShipment = () => {
       }
 
       // 6. Formatting Data Excel
-      const excelData = rawData.map((item, index) => {
-        const row = {
-          No: index + 1,
-          Customer: item.customer || "-",
-          "No. Doc": item.documentno || item.docNo || "-",
-          "Tanggal Plan": item.plantime ? formatDateTime(item.plantime) : "-",
-        };
+      const excelData = rawData.map((item, index) => ({
+        No: index + 1,
+        Customer: item.customer,
+        "No. Surat Jalan": item.documentno,
+        "Tanggal Plan": formatDateTime(item.plantime),
 
-        stepDefinitions.forEach((step) => {
-          const prefix = step.title;
-          if (step.handoverKey) {
-            row[`${prefix} Handover Date`] = item[step.handoverKey]
-              ? formatDateTime(item[step.handoverKey])
-              : "-";
-            row[`${prefix} Handover By`] = item[step.handoverByKey] || "-";
-          }
-          if (step.acceptKey) {
-            row[`${prefix} Accept Date`] = item[step.acceptKey]
-              ? formatDateTime(item[step.acceptKey])
-              : "-";
-            row[`${prefix} Accept By`] = item[step.acceptByKey] || "-";
-          }
-        });
-        return row;
-      });
+        Status: getMainStatus(item),
+
+        "Cancel Logs": item.cancel_logs || "-",
+      }));
 
       // 7. Generate Excel File
       const worksheet = utils.json_to_sheet(excelData);
@@ -493,6 +514,46 @@ const ProgressShipment = () => {
 
     fetchData(pag.current, pag.pageSize, dateRange, filtersState);
   };
+
+  useEffect(() => {
+    if (!cancelModalOpen || !selectedDoc) return;
+
+    console.log("selected doc : ", selectedDoc);
+
+    const fetchCancelLogs = async () => {
+      setCancelLoading(true);
+      setCancelLogs([]);
+
+      try {
+        const res = await fetch(
+          `${backEndUrl}/tms/cancel-log?adw_trackingsj_id=${selectedDoc.adw_trackingsj_id}`,
+          { credentials: "include" },
+        );
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const result = await res.json();
+
+        console.log("cancel logs : ", result);
+
+        // fleksibel terhadap bentuk response backend
+        const data =
+          result?.data?.data || result?.items || result?.result || [];
+
+        setCancelLogs(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error("Fetch cancel log error:", err);
+        message.error("Gagal mengambil log cancel");
+        setCancelLogs([]);
+      } finally {
+        setCancelLoading(false);
+      }
+    };
+
+    fetchCancelLogs();
+  }, [cancelModalOpen, selectedDoc]);
 
   useEffect(() => {
     // initial load
@@ -620,13 +681,22 @@ const ProgressShipment = () => {
       dataIndex: "docNo",
       key: "docNo",
       ...getColumnSearchProps("docNo"),
+      render: (text, record) => (
+        <Button
+          type="link"
+          style={{ padding: 0 }}
+          onClick={() => showCancelLogModal(record)}
+        >
+          {text}
+        </Button>
+      ),
     },
-    {
-      title: "Notes",
-      dataIndex: "notes",
-      key: "notes",
-      ...getColumnSearchProps("notes"),
-    },
+    // {
+    //   title: "Notes",
+    //   dataIndex: "notes",
+    //   key: "notes",
+    //   ...getColumnSearchProps("notes"),
+    // },
     {
       title: "Date",
       dataIndex: "planTime",
@@ -717,6 +787,11 @@ const ProgressShipment = () => {
     },
   ];
 
+  const showCancelLogModal = (record) => {
+    setSelectedDoc(record);
+    setCancelModalOpen(true);
+  };
+
   return isMobile ? (
     <ProgressShipmentMobile />
   ) : (
@@ -758,7 +833,7 @@ const ProgressShipment = () => {
           scroll={{ x: "max-content" }}
           rowKey={(record) => record.m_inout_id || record.key}
           rowClassName={(record) =>
-            record.iscancel === "Y" ? "row-cancelled" : ""
+            record.has_cancel_log ? "row-cancelled" : ""
           }
         />
 
@@ -829,6 +904,41 @@ const ProgressShipment = () => {
             </Timeline>
           </Modal>
         )}
+
+        <Modal
+          title={`Log Cancel Dokumen: ${selectedDoc?.docNo}`}
+          open={cancelModalOpen}
+          onCancel={() => setCancelModalOpen(false)}
+          footer={[
+            <Button key="close" onClick={() => setCancelModalOpen(false)}>
+              Tutup
+            </Button>,
+          ]}
+          width={700}
+        >
+          {cancelLogs.length === 0 ? (
+            <Text type="secondary">Tidak ada log cancel</Text>
+          ) : (
+            <Timeline>
+              {cancelLogs.map((log) => (
+                <Timeline.Item
+                  key={log.adw_trackingsj_events_id}
+                  color="red"
+                  dot={<ClockCircleOutlined />}
+                >
+                  <div style={{ fontWeight: "bold" }}>
+                    {formatDateTime(log.created)}
+                  </div>
+                  {/* <div>state: {log.action}</div>*/}
+                  <div>{log.reason}</div>
+                  <div style={{ fontSize: 12, color: "#888" }}>
+                    {log.createdby_name}
+                  </div>
+                </Timeline.Item>
+              ))}
+            </Timeline>
+          )}
+        </Modal>
       </div>
     </LayoutGlobal>
   );

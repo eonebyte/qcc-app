@@ -3262,11 +3262,36 @@ class TMS {
                     FROM RankedEvents
                     WHERE rn = 1
                     GROUP BY adw_trackingsj_id
+                ),
+                CancelLogs AS (
+                   SELECT
+                     e.adw_trackingsj_id,
+                     STRING_AGG(
+                       to_char(e.created, 'YYYY-MM-DD HH24:MI')
+                       || ' | ' || e.notes
+                       || ' | ' ||
+                        CASE
+                          WHEN u.name = 'System (deprecated)' OR u.name IS NULL --because if user is driver column createdby is 0
+                            THEN e.username
+                          ELSE u.name
+                        END,
+                       E'\n'
+                       ORDER BY e.created DESC
+                     ) AS cancel_logs
+                   FROM adw_trackingsj_events e
+                   LEFT JOIN ad_user u ON e.createdby = u.ad_user_id
+                   WHERE e.adw_event_type = 'CANCEL'
+                   GROUP BY e.adw_trackingsj_id
                 )
                 SELECT
                     ats.m_inout_id, '' AS customer, '' AS adw_tms_id, ats.documentno, ats.plantime,
-                    coalesce(ats.canceled, ats.canceledmkt) iscancel,
-                    coalesce(ats.notes, ats.notesmkt) notes,
+                    cl.cancel_logs, 
+                    EXISTS (
+                      SELECT 1
+                      FROM adw_trackingsj_events ce
+                      WHERE ce.adw_trackingsj_id = ats.adw_trackingsj_id
+                        AND ce.adw_event_type = 'CANCEL'
+                    ) AS has_cancel_log,
                     ats.cancelrequest, ats.adw_trackingsj_id, ats.checkpoin_id,
                     pe.*,
                     user1.name AS ho_delivery_to_dpkby_name,
@@ -3285,6 +3310,7 @@ class TMS {
                     pe.accept_customer_from_driverby AS accept_customer_from_driverby_name
                 FROM adw_trackingsj ats
                 LEFT JOIN PivotedEvents pe ON ats.adw_trackingsj_id = pe.adw_trackingsj_id
+                LEFT JOIN CancelLogs cl ON ats.adw_trackingsj_id = cl.adw_trackingsj_id
                 LEFT JOIN ad_user user1 ON pe.ho_delivery_to_dpkby = user1.ad_user_id
                 LEFT JOIN ad_user user2 ON pe.accept_dpk_from_deliveryby = user2.ad_user_id
                 LEFT JOIN ad_user user3 ON pe.ho_dpk_to_driverby = user3.ad_user_id
@@ -4644,9 +4670,7 @@ class TMS {
             SELECT
                 tsj.adw_trackingsj_id,
                 tsj.documentno,
-                tsj.drivername,
-                coalesce(tsj.canceled, tsj.canceledmkt) iscancel,
-                coalesce(tsj.notes, tsj.notesmkt) notes
+                tsj.drivername
             FROM adw_group_sj gs
             LEFT JOIN adw_trackingsj tsj
                 ON tsj.adw_trackingsj_id = gs.adw_trackingsj_id
@@ -5334,7 +5358,7 @@ class TMS {
     }
   }
 
-  async processReqCancelMkt(server, payload) {
+  async processReqCancelMkt(server, payload, userId) {
     let dbClient;
     let oracleConnection;
 
@@ -5346,13 +5370,14 @@ class TMS {
 
       const updateQuery = `
             UPDATE adw_trackingsj
-            SET cancelrequestmkt = 'Y', notesmkt = $2
+            SET cancelrequestmkt = 'Y', notesmkt = $2, updatedby = $3
             WHERE adw_trackingsj_id = $1
             RETURNING *;
         `;
       const updated = await dbClient.query(updateQuery, [
         adw_trackingsj_id,
         noteCancel,
+        userId,
       ]);
 
       return {
@@ -5728,7 +5753,7 @@ class TMS {
                 ) VALUES(
                     1000003, 1000003, $1,
                     'CANCEL', $2, $3,
-                    $4, NOW(), 0, 'Y',
+                    $4, NOW(), $7, 'Y',
                     NOW(), 0, $5, $6
                 );
             `;
@@ -5740,6 +5765,7 @@ class TMS {
           updatedData.adw_trackingsj_id,
           updatedData.checkpoin_id,
           updatedData.notesmkt,
+          updatedData.updatedby,
         ]);
 
         // --- Helper Function Internal (Agar kodingan tidak duplikat) ---
@@ -5931,6 +5957,51 @@ class TMS {
       return {
         success: false,
         message: "Failed to load config",
+        data: null,
+      };
+    } finally {
+      if (dbClient) await dbClient.release();
+    }
+  }
+
+  async getCancelLogs(server, adw_trackingsj_id) {
+    let dbClient;
+
+    try {
+      dbClient = await server.pg.connect();
+
+      const query = `
+        SELECT 
+       	ate.adw_trackingsj_events_id,
+       	ate.adw_event_type action, 
+       	ate.notes reason, 
+       	ate.created,
+       	CASE 
+        		WHEN ate.adw_from_actor = 'Marketing' THEN au.name
+        		ELSE ate.username
+       	END createdby_name
+                FROM adw_trackingsj_events ate 
+                JOIN ad_user au ON ate.createdby = au.ad_user_id 
+                WHERE ate.adw_trackingsj_id = $1
+       	AND ate.adw_event_type = 'CANCEL'
+        ORDER BY ate.created DESC
+        `;
+
+      const values = [adw_trackingsj_id];
+
+      const res = await dbClient.query(query, values);
+
+      return {
+        success: true,
+        message: "Cancel log loaded",
+        data: res.rows.length ? res.rows : null,
+      };
+    } catch (error) {
+      console.error("Error getCancelLogs:", error);
+
+      return {
+        success: false,
+        message: "Failed to load cancel log",
         data: null,
       };
     } finally {

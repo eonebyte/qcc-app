@@ -1,455 +1,523 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Button, Input, Space, Table, Modal, message, DatePicker, notification } from "antd";
+import {
+  Button,
+  Input,
+  Space,
+  Table,
+  Modal,
+  message,
+  DatePicker,
+  notification,
+} from "antd";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
-import { CheckOutlined, CloseOutlined, SearchOutlined, SendOutlined, SyncOutlined } from "@ant-design/icons";
+import {
+  CheckOutlined,
+  CloseOutlined,
+  SearchOutlined,
+  SendOutlined,
+  SyncOutlined,
+} from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
 import axios from "axios";
+import useIsMobile from "../../../hooks/useIsMobile";
+import DeliveryToDPKMobile from "./DeliveryToDPKMobile";
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
-
 const { RangePicker } = DatePicker;
-
 export default function DeliveryToDPK() {
+  const isMobile = useIsMobile();
+  const [tableData, setTableData] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-    const [tableData, setTableData] = useState([]);
-    const [loading, setLoading] = useState(false);
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+  });
 
-    const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 10
-    });
+  const [isModalConfirmOpen, setIsModalConfirmopen] = useState(false);
+  const [itemToConfirm, setItemToConfirm] = useState(null);
 
-    const [isModalConfirmOpen, setIsModalConfirmopen] = useState(false);
-    const [itemToConfirm, setItemToConfirm] = useState(null);
+  const [isModalRejectCancelOpen, setIsModalRejectCancelopen] = useState(false);
+  const [itemToRejectCancel, setItemToRejectCancel] = useState(null);
 
-    const [isModalRejectCancelOpen, setIsModalRejectCancelopen] = useState(false);
-    const [itemToRejectCancel, setItemToRejectCancel] = useState(null);
+  const [dateRange, setDateRange] = useState([null, null]);
 
+  // selected rows
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [selectedRows, setSelectedRows] = useState([]);
 
+  // modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-    const [dateRange, setDateRange] = useState([null, null]);
+  // SEARCH
+  const [searchText, setSearchText] = useState("");
+  const [searchedColumn, setSearchedColumn] = useState("");
+  const searchInput = useRef(null);
 
-    // selected rows
-    const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-    const [selectedRows, setSelectedRows] = useState([]);
+  const handleRefresh = () => {
+    setDateRange([null, null]); // reset filter tanggal
+    fetchData([null, null]); // fetch tanpa filter
+    message.success("Data refreshed");
+  };
 
-    // modal
-    const [isModalOpen, setIsModalOpen] = useState(false);
+  const handleSearch = (selectedKeys, confirm, dataIndex) => {
+    confirm();
+    setSearchText(selectedKeys[0]);
+    setSearchedColumn(dataIndex);
+  };
 
-    // SEARCH
-    const [searchText, setSearchText] = useState("");
-    const [searchedColumn, setSearchedColumn] = useState("");
-    const searchInput = useRef(null);
+  const handleReset = (clearFilters) => {
+    clearFilters();
+    setSearchText("");
+  };
 
-    const handleRefresh = () => {
-        setDateRange([null, null]);  // reset filter tanggal
-        fetchData([null, null]);     // fetch tanpa filter
-        message.success("Data refreshed");
-    };
+  const getColumnSearchProps = (dataIndex) => ({
+    filterDropdown: ({
+      setSelectedKeys,
+      selectedKeys,
+      confirm,
+      clearFilters,
+      close,
+    }) => (
+      <div style={{ padding: 8 }} onKeyDown={(e) => e.stopPropagation()}>
+        <Input
+          ref={searchInput}
+          placeholder={`Search ${dataIndex}`}
+          value={selectedKeys[0]}
+          onChange={(e) =>
+            setSelectedKeys(e.target.value ? [e.target.value] : [])
+          }
+          onPressEnter={() => handleSearch(selectedKeys, confirm, dataIndex)}
+          style={{ marginBottom: 8, display: "block" }}
+        />
 
+        <Space>
+          <Button
+            type="primary"
+            onClick={() => handleSearch(selectedKeys, confirm, dataIndex)}
+            icon={<SearchOutlined />}
+            size="small"
+            style={{ width: 90 }}
+          >
+            Search
+          </Button>
 
+          <Button
+            onClick={() => clearFilters && handleReset(clearFilters)}
+            size="small"
+            style={{ width: 90 }}
+          >
+            Reset
+          </Button>
 
-    const handleSearch = (selectedKeys, confirm, dataIndex) => {
-        confirm();
-        setSearchText(selectedKeys[0]);
-        setSearchedColumn(dataIndex);
-    };
+          <Button
+            type="link"
+            size="small"
+            onClick={() => {
+              confirm({ closeDropdown: false });
+              setSearchText(selectedKeys[0]);
+              setSearchedColumn(dataIndex);
+            }}
+          >
+            Filter
+          </Button>
 
-    const handleReset = (clearFilters) => {
-        clearFilters();
-        setSearchText("");
-    };
+          <Button type="link" size="small" onClick={() => close()}>
+            Close
+          </Button>
+        </Space>
+      </div>
+    ),
+    filterIcon: (filtered) => (
+      <SearchOutlined style={{ color: filtered ? "#1677ff" : undefined }} />
+    ),
+    onFilter: (value, record) =>
+      record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
 
-    const getColumnSearchProps = (dataIndex) => ({
-        filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters, close }) => (
-            <div style={{ padding: 8 }} onKeyDown={(e) => e.stopPropagation()}>
-                <Input
-                    ref={searchInput}
-                    placeholder={`Search ${dataIndex}`}
-                    value={selectedKeys[0]}
-                    onChange={(e) => setSelectedKeys(e.target.value ? [e.target.value] : [])}
-                    onPressEnter={() => handleSearch(selectedKeys, confirm, dataIndex)}
-                    style={{ marginBottom: 8, display: "block" }}
-                />
-
-                <Space>
-                    <Button
-                        type="primary"
-                        onClick={() => handleSearch(selectedKeys, confirm, dataIndex)}
-                        icon={<SearchOutlined />}
-                        size="small"
-                        style={{ width: 90 }}
-                    >
-                        Search
-                    </Button>
-
-                    <Button
-                        onClick={() => clearFilters && handleReset(clearFilters)}
-                        size="small"
-                        style={{ width: 90 }}
-                    >
-                        Reset
-                    </Button>
-
-                    <Button
-                        type="link"
-                        size="small"
-                        onClick={() => {
-                            confirm({ closeDropdown: false });
-                            setSearchText(selectedKeys[0]);
-                            setSearchedColumn(dataIndex);
-                        }}
-                    >
-                        Filter
-                    </Button>
-
-                    <Button type="link" size="small" onClick={() => close()}>
-                        Close
-                    </Button>
-                </Space>
-            </div>
-        ),
-        filterIcon: (filtered) => (
-            <SearchOutlined style={{ color: filtered ? "#1677ff" : undefined }} />
-        ),
-        onFilter: (value, record) =>
-            record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
-
-        filterDropdownProps: {
-            onOpenChange(open) {
-                if (open) {
-                    setTimeout(() => searchInput.current?.select(), 100);
-                }
-            },
-        },
-
-        render: (text) =>
-            searchedColumn === dataIndex ? (
-                <Highlighter
-                    highlightStyle={{ backgroundColor: "#ffc069", padding: 0 }}
-                    searchWords={[searchText]}
-                    autoEscape
-                    textToHighlight={text ? text.toString() : ""}
-                />
-            ) : (
-                text
-            ),
-    });
-
-    const showModalConfirm = (shipment) => {
-        setItemToConfirm(shipment);
-        setIsModalConfirmopen(true);
-    };
-
-    const showModalRejectCancel = (shipment) => {
-        setItemToRejectCancel(shipment);
-        setIsModalRejectCancelopen(true);
-    };
-
-
-    const handleConfirmOk = async () => {
-        try {
-
-            const res = await axios.post(`${backEndUrl}/tms/cancel`, itemToConfirm, { withCredentials: true });
-
-            if (res.data.success) {
-                notification.success({ message: 'Info', description: `Dokumen ${itemToConfirm.documentno} akan diproses untuk dicancel.` });
-                fetchData();
-            } else {
-                notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
-            }
-        } catch (error) {
-            console.error("Submit error:", error);
-            notification.error({ message: 'cancel Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
-        } finally {
-            setIsModalConfirmopen(false);
-            setItemToConfirm(null);
+    filterDropdownProps: {
+      onOpenChange(open) {
+        if (open) {
+          setTimeout(() => searchInput.current?.select(), 100);
         }
-    };
+      },
+    },
 
-    const handleConfirmClose = () => {
-        setIsModalConfirmopen(false);
-        setItemToConfirm(null);
-    };
+    render: (text) =>
+      searchedColumn === dataIndex ? (
+        <Highlighter
+          highlightStyle={{ backgroundColor: "#ffc069", padding: 0 }}
+          searchWords={[searchText]}
+          autoEscape
+          textToHighlight={text ? text.toString() : ""}
+        />
+      ) : (
+        text
+      ),
+  });
 
-    const handleRejectCancelOk = async () => {
-        console.log("reject canceling item:", itemToRejectCancel);
-        try {
+  const showModalConfirm = (shipment) => {
+    setItemToConfirm(shipment);
+    setIsModalConfirmopen(true);
+  };
 
-            const res = await axios.post(`${backEndUrl}/tms/reject/req/cancel`, itemToRejectCancel, { withCredentials: true });
+  const showModalRejectCancel = (shipment) => {
+    setItemToRejectCancel(shipment);
+    setIsModalRejectCancelopen(true);
+  };
 
-            if (res.data.success) {
-                notification.success({ message: 'Info', description: `Dokumen ${itemToRejectCancel.documentno} akan diproses untuk dicancel.` });
-                fetchData();
-            } else {
-                notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
-            }
-        } catch (error) {
-            console.error("Submit error:", error);
-            notification.error({ message: 'cancel Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
-        } finally {
-            setIsModalRejectCancelopen(false);
-            setItemToRejectCancel(null);
-        }
-    };
+  const handleConfirmOk = async () => {
+    try {
+      const res = await axios.post(`${backEndUrl}/tms/cancel`, itemToConfirm, {
+        withCredentials: true,
+      });
 
-    const handleRejectCancelClose = () => {
-        setIsModalConfirmopen(false);
-        setItemToConfirm(null);
-    };
-
-
-    // ================== TABLE COLUMNS ==================
-    const columns = [
-        {
-            title: "No",
-            dataIndex: "no",
-            key: "no",
-            width: 60,
-            render: (_text, _record, index) => {
-                const { current, pageSize } = pagination;
-                return (current - 1) * pageSize + index + 1;
-            }
-        },
-        {
-            title: "Document No",
-            dataIndex: "documentno",
-            key: "documentno",
-            ...getColumnSearchProps("documentno"),
-        },
-        {
-            title: "Customer",
-            dataIndex: "customer",
-            key: "customer",
-            ...getColumnSearchProps("customer"),
-        },
-        {
-            title: "Plan Time",
-            dataIndex: "plantime",
-            key: "plantime",
-            ...getColumnSearchProps("plantime"),
-            render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-',
-        },
-        {
-            title: "Actions",
-            key: "actions",
-            width: 120,
-            render: (_, record) => {
-                console.log('tesss : ', record);
-                if (record.checkpoin_id == '5') {
-                    if (record.cancelrequest == 'Y') {
-                        return (<Space>
-                            <Button onClick={() => showModalConfirm(record)}
-                                icon={<CheckOutlined />} size='small' color="cyan" variant="outlined">Confirm Cancel</Button>
-                            <Button onClick={() => showModalRejectCancel(record)}
-                                icon={<CloseOutlined />} size='small' danger>Reject</Button>
-                        </Space>)
-                    } else {
-                        return (<Tag color={"warning"} variant={'solid'}>
-                            Waiting
-                        </Tag>)
-                    }
-                } else {
-                    return '-'
-                }
-
-
-            }
-        }
-    ];
-
-    // ================== FETCH DATA API ==================
-    const fetchData = async (dateRangeParam = dateRange) => {
-        setLoading(true);
-
-        const startDate = dateRangeParam?.[0]
-            ? dateRangeParam[0].format("YYYY-MM-DD")
-            : "";
-        const endDate = dateRangeParam?.[1]
-            ? dateRangeParam[1].format("YYYY-MM-DD")
-            : "";
-        try {
-            const resp = await fetch(
-                `${backEndUrl}/handover/list/delivery/to/dpk?startDate=${startDate}&endDate=${endDate}`,
-                { credentials: "include" }
-            );
-            const json = await resp.json();
-
-            const mapped = json.data.data.map((row, index) => ({
-                key: row.m_inout_id,
-                m_inout_id: row.m_inout_id,
-                adw_trackingsj_id: row.adw_trackingsj_id,
-                no: index + 1,
-                documentno: row.documentno,
-                customer: row.customer,
-                plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
-                checkpoin_id: row.checkpoin_id,
-                cancelrequest: row.cancelrequest,
-            }));
-
-            console.log('mapped : ', mapped);
-
-
-            setTableData(mapped);
-        } catch (err) {
-            console.error("Fetch error:", err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
+      if (res.data.success) {
+        notification.success({
+          message: "Info",
+          description: `Dokumen ${itemToConfirm.documentno} akan diproses untuk dicancel.`,
+        });
         fetchData();
-    }, []);
+      } else {
+        notification.error({
+          message: "Gagal",
+          description: res.data.message || "Terjadi kesalahan.",
+        });
+      }
+    } catch (error) {
+      console.error("Submit error:", error);
+      notification.error({
+        message: "cancel Gagal",
+        description: error.response?.data?.message || "Silakan coba lagi.",
+      });
+    } finally {
+      setIsModalConfirmopen(false);
+      setItemToConfirm(null);
+    }
+  };
 
-    // ================== ROW SELECTION ==================
-    const rowSelection = {
-        selectedRowKeys,
-        onChange: (selectedKeys, selectedRows) => {
-            setSelectedRowKeys(selectedKeys);
-            setSelectedRows(selectedRows);
-        },
-    };
+  const handleConfirmClose = () => {
+    setIsModalConfirmopen(false);
+    setItemToConfirm(null);
+  };
 
-    // ================== OPEN MODAL ==================
-    const openHandoverModal = () => {
-        if (selectedRows.length === 0) {
-            message.warning("Pilih minimal 1 row.");
-            return;
-        }
-        setIsModalOpen(true);
-    };
+  const handleRejectCancelOk = async () => {
+    console.log("reject canceling item:", itemToRejectCancel);
+    try {
+      const res = await axios.post(
+        `${backEndUrl}/tms/reject/req/cancel`,
+        itemToRejectCancel,
+        { withCredentials: true },
+      );
 
-    // ================== SUBMIT TO BACKEND ==================
-    const handleSubmit = async () => {
-        try {
-            const payload = {
-                data: selectedRows,
-            };
+      if (res.data.success) {
+        notification.success({
+          message: "Info",
+          description: `Dokumen ${itemToRejectCancel.documentno} akan diproses untuk dicancel.`,
+        });
+        fetchData();
+      } else {
+        notification.error({
+          message: "Gagal",
+          description: res.data.message || "Terjadi kesalahan.",
+        });
+      }
+    } catch (error) {
+      console.error("Submit error:", error);
+      notification.error({
+        message: "cancel Gagal",
+        description: error.response?.data?.message || "Silakan coba lagi.",
+      });
+    } finally {
+      setIsModalRejectCancelopen(false);
+      setItemToRejectCancel(null);
+    }
+  };
 
-            console.log(JSON.stringify(payload));
+  const handleRejectCancelClose = () => {
+    setIsModalConfirmopen(false);
+    setItemToConfirm(null);
+  };
 
-
-            const resp = await fetch(`${backEndUrl}/handover/process/delivery/to/dpk`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-                credentials: "include"
-            });
-
-            const json = await resp.json();
-
-
-            if (json.data.insertedCount <= 0) {
-                message.error("Submit gagal.");
-                return;
-            }
-
-            message.success("Submit handover berhasil!");
-
-            setIsModalOpen(false);
-            setSelectedRowKeys([]);
-            setSelectedRows([]);
-
-            fetchData();
-        } catch (err) {
-            console.error(err);
-            message.error("Terjadi error saat submit.");
-        }
-    };
-
-    return (
-        <LayoutGlobal>
-            <div
-                style={{
-                    marginBottom: 10,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                    gap: 12
-                }}
-            >
-                <Space wrap>
-                    <RangePicker
-                        style={{ marginLeft: 5, marginTop: 5, marginBottom: 0 }}
-                        format="YYYY-MM-DD"
-                        value={dateRange}
-                        onChange={(dates) => {
-                            setDateRange(dates); // hanya simpan, jangan fetch
-                        }}
-                    />
-                    <Button icon={<SearchOutlined />} style={{ marginTop: 5 }} type="primary" onClick={() => fetchData(dateRange)}>
-                    </Button>
-                    {/* Refresh Button */}
-                    <Button style={{ marginLeft: 5, marginTop: 5, marginBottom: 0 }} icon={<SyncOutlined />} onClick={handleRefresh}></Button>
-                </Space>
-            </div>
-
-            <Table
-                rowSelection={rowSelection}
-                columns={columns}
-                dataSource={tableData}
-                bordered
-                loading={loading}
-                pagination={{
-                    ...pagination,
-                    total: tableData.length,
-                    onChange: (page, pageSize) => {
-                        setPagination({ current: page, pageSize });
-                    }
-                }}
-            />
-
-            {/* BUTTON HANDOVER */}
-            <div style={{ marginTop: 16 }}>
+  // ================== TABLE COLUMNS ==================
+  const columns = [
+    {
+      title: "No",
+      dataIndex: "no",
+      key: "no",
+      width: 60,
+      render: (_text, _record, index) => {
+        const { current, pageSize } = pagination;
+        return (current - 1) * pageSize + index + 1;
+      },
+    },
+    {
+      title: "Document No",
+      dataIndex: "documentno",
+      key: "documentno",
+      ...getColumnSearchProps("documentno"),
+    },
+    {
+      title: "Customer",
+      dataIndex: "customer",
+      key: "customer",
+      ...getColumnSearchProps("customer"),
+    },
+    {
+      title: "Plan Time",
+      dataIndex: "plantime",
+      key: "plantime",
+      ...getColumnSearchProps("plantime"),
+      render: (text) => (text ? dayjs(text).format("DD-MM-YYYY HH:mm") : "-"),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      width: 120,
+      render: (_, record) => {
+        console.log("tesss : ", record);
+        if (record.checkpoin_id == "5") {
+          if (record.cancelrequest == "Y") {
+            return (
+              <Space>
                 <Button
-                    style={{ margin: 15 }}
-                    type="primary"
-                    disabled={selectedRows.length === 0}
-                    onClick={openHandoverModal}
-                    icon={<SendOutlined />}
+                  onClick={() => showModalConfirm(record)}
+                  icon={<CheckOutlined />}
+                  size="small"
+                  color="cyan"
+                  variant="outlined"
                 >
-                    Handover {selectedRows.length > 0 ? `(${selectedRows.length})` : ''}
+                  Confirm Cancel
                 </Button>
-            </div>
+                <Button
+                  onClick={() => showModalRejectCancel(record)}
+                  icon={<CloseOutlined />}
+                  size="small"
+                  danger
+                >
+                  Reject
+                </Button>
+              </Space>
+            );
+          } else {
+            return (
+              <Tag color={"warning"} variant={"solid"}>
+                Waiting
+              </Tag>
+            );
+          }
+        } else {
+          return "-";
+        }
+      },
+    },
+  ];
 
-            {/* MODAL CONFIRMATION */}
-            <Modal
-                title="Confirm Handover"
-                open={isModalOpen}
-                onCancel={() => setIsModalOpen(false)}
-                onOk={handleSubmit}
-                okText="Submit"
-                cancelText="Cancel"
-            >
-                <p>Apakah Anda yakin ingin submit berikut:</p>
+  // ================== FETCH DATA API ==================
+  const fetchData = async (dateRangeParam = dateRange) => {
+    setLoading(true);
 
-                <ul>
-                    {selectedRows.map((r) => (
-                        <li key={r.key}>{r.documentno}</li>
-                    ))}
-                </ul>
-            </Modal>
+    const startDate = dateRangeParam?.[0]
+      ? dateRangeParam[0].format("YYYY-MM-DD")
+      : "";
+    const endDate = dateRangeParam?.[1]
+      ? dateRangeParam[1].format("YYYY-MM-DD")
+      : "";
+    try {
+      const resp = await fetch(
+        `${backEndUrl}/handover/list/delivery/to/dpk?startDate=${startDate}&endDate=${endDate}`,
+        { credentials: "include" },
+      );
+      const json = await resp.json();
 
-            <Modal
-                title="Confirm"
-                open={isModalConfirmOpen}
-                onOk={handleConfirmOk}
-                onCancel={handleConfirmClose}
-            >
-                <p>Apakah Anda yakin akan confirm dokumen <strong>{itemToConfirm?.documentno}</strong>?</p>
-            </Modal>
+      const mapped = json.data.data.map((row, index) => ({
+        key: row.m_inout_id,
+        m_inout_id: row.m_inout_id,
+        adw_trackingsj_id: row.adw_trackingsj_id,
+        no: index + 1,
+        documentno: row.documentno,
+        customer: row.customer,
+        plantime: dayjs(row.plantime).format("YYYY-MM-DD HH:mm"),
+        checkpoin_id: row.checkpoin_id,
+        cancelrequest: row.cancelrequest,
+      }));
 
-            <Modal
-                title="Confirm cancel"
-                open={isModalRejectCancelOpen}
-                onOk={handleRejectCancelOk}
-                onCancel={handleRejectCancelClose}
-            >
-                <p>Apakah Anda yakin akan reject cancel dokumen <strong>{itemToRejectCancel?.documentno}</strong>?</p>
-            </Modal>
-        </LayoutGlobal>
-    );
+      setTableData(mapped);
+    } catch (err) {
+      console.error("Fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // ================== ROW SELECTION ==================
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (selectedKeys, selectedRows) => {
+      setSelectedRowKeys(selectedKeys);
+      setSelectedRows(selectedRows);
+    },
+  };
+
+  // ================== OPEN MODAL ==================
+  const openHandoverModal = () => {
+    if (selectedRows.length === 0) {
+      message.warning("Pilih minimal 1 row.");
+      return;
+    }
+    setIsModalOpen(true);
+  };
+
+  // ================== SUBMIT TO BACKEND ==================
+  const handleSubmit = async () => {
+    try {
+      const payload = {
+        data: selectedRows,
+      };
+
+      console.log(JSON.stringify(payload));
+
+      const resp = await fetch(
+        `${backEndUrl}/handover/process/delivery/to/dpk`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          credentials: "include",
+        },
+      );
+
+      const json = await resp.json();
+
+      if (json.data.insertedCount <= 0) {
+        message.error("Submit gagal.");
+        return;
+      }
+
+      message.success("Submit handover berhasil!");
+
+      setIsModalOpen(false);
+      setSelectedRowKeys([]);
+      setSelectedRows([]);
+
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      message.error("Terjadi error saat submit.");
+    }
+  };
+
+  return isMobile ? (
+    <DeliveryToDPKMobile />
+  ) : (
+    <LayoutGlobal>
+      <div
+        style={{
+          marginBottom: 10,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+      >
+        <Space wrap>
+          <RangePicker
+            style={{ marginLeft: 5, marginTop: 5, marginBottom: 0 }}
+            format="YYYY-MM-DD"
+            value={dateRange}
+            onChange={(dates) => {
+              setDateRange(dates); // hanya simpan, jangan fetch
+            }}
+          />
+          <Button
+            icon={<SearchOutlined />}
+            style={{ marginTop: 5 }}
+            type="primary"
+            onClick={() => fetchData(dateRange)}
+          ></Button>
+          {/* Refresh Button */}
+          <Button
+            style={{ marginLeft: 5, marginTop: 5, marginBottom: 0 }}
+            icon={<SyncOutlined />}
+            onClick={handleRefresh}
+          ></Button>
+        </Space>
+      </div>
+
+      <Table
+        rowSelection={rowSelection}
+        columns={columns}
+        dataSource={tableData}
+        bordered
+        loading={loading}
+        pagination={{
+          ...pagination,
+          total: tableData.length,
+          onChange: (page, pageSize) => {
+            setPagination({ current: page, pageSize });
+          },
+        }}
+      />
+
+      {/* BUTTON HANDOVER */}
+      <div style={{ marginTop: 16 }}>
+        <Button
+          style={{ margin: 15 }}
+          type="primary"
+          disabled={selectedRows.length === 0}
+          onClick={openHandoverModal}
+          icon={<SendOutlined />}
+        >
+          Handover {selectedRows.length > 0 ? `(${selectedRows.length})` : ""}
+        </Button>
+      </div>
+
+      {/* MODAL CONFIRMATION */}
+      <Modal
+        title="Confirm Handover"
+        open={isModalOpen}
+        onCancel={() => setIsModalOpen(false)}
+        onOk={handleSubmit}
+        okText="Submit"
+        cancelText="Cancel"
+      >
+        <p>Apakah Anda yakin ingin submit berikut:</p>
+
+        <ul>
+          {selectedRows.map((r) => (
+            <li key={r.key}>{r.documentno}</li>
+          ))}
+        </ul>
+      </Modal>
+
+      <Modal
+        title="Confirm"
+        open={isModalConfirmOpen}
+        onOk={handleConfirmOk}
+        onCancel={handleConfirmClose}
+      >
+        <p>
+          Apakah Anda yakin akan confirm dokumen{" "}
+          <strong>{itemToConfirm?.documentno}</strong>?
+        </p>
+      </Modal>
+
+      <Modal
+        title="Confirm cancel"
+        open={isModalRejectCancelOpen}
+        onOk={handleRejectCancelOk}
+        onCancel={handleRejectCancelClose}
+      >
+        <p>
+          Apakah Anda yakin akan reject cancel dokumen{" "}
+          <strong>{itemToRejectCancel?.documentno}</strong>?
+        </p>
+      </Modal>
+    </LayoutGlobal>
+  );
 }

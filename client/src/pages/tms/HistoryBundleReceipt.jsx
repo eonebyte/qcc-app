@@ -398,17 +398,6 @@ const HistoryBundleReceipt = () => {
           columns={[
             { title: "SJ No", dataIndex: "documentno" },
             { title: "Driver", dataIndex: "drivername" },
-            {
-              title: "Status",
-              dataIndex: "iscancel",
-              render: (value) => {
-                if (value === "Y") {
-                  return "Cancel";
-                }
-                return "Success";
-              },
-            },
-            { title: "Notes", dataIndex: "notes" },
           ]}
           dataSource={rows.map((r) => ({ ...r, key: r.adw_trackingsj_id }))}
           pagination={false}
@@ -416,9 +405,6 @@ const HistoryBundleReceipt = () => {
           bordered // <-- Kelihatan lebih rapi
           style={{ margin: 0 }}
           scroll={{ x: "max-content" }}
-          rowClassName={(record) =>
-            record.iscancel === "Y" ? "row-cancelled" : ""
-          }
         />
       </div>
     );
