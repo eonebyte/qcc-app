@@ -68,10 +68,10 @@ export async function build(opts = {}) {
         decorateReply: false
     });
 
-    await app.register(fastifyStatic, {
-        root: join(import.meta.url, '../client/dist'), // Menyesuaikan path ke folder 'dist'
-        prefix: '/', // Semua file di folder dist akan dapat diakses melalui prefix ini
-    });
+    // await app.register(fastifyStatic, {
+    //     root: join(import.meta.url, '../client/dist'), // Menyesuaikan path ke folder 'dist'
+    //     prefix: '/', // Semua file di folder dist akan dapat diakses melalui prefix ini
+    // });
 
 
     app.get('/', async (request, reply) => {
