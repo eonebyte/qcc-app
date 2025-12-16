@@ -7,14 +7,17 @@ import axios from "axios";
 import { useDispatch, useSelector } from "react-redux";
 import { setCustomers } from "../../../states/reducers/customerSlice";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
+import useIsMobile from "../../../hooks/useIsMobile";
+import CheckOutMobile from "./CheckOutMobile";
 
 const { TextArea } = Input;
-
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 export default function CheckOut() {
     const dispatch = useDispatch();
+
+    const isMobile = useIsMobile();
 
     const user = useSelector((state) => state.auth.user);
     // const userId = user.ad_user_id;
@@ -513,7 +516,7 @@ export default function CheckOut() {
     };
 
     // ================== OPEN MODAL ==================
-    return (
+    return isMobile ? <CheckOutMobile /> :
         <>
             <LayoutGlobal>
                 <Table
@@ -620,5 +623,5 @@ export default function CheckOut() {
                 </Modal>
             </LayoutGlobal>
         </>
-    );
+        ;
 }

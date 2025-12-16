@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
-import { Button, Input, Space, Table, Modal, message, Badge } from "antd";
+import { Button, Input, Space, Table, Modal, message, Badge, Tag, notification } from "antd";
 import { CloseOutlined, SearchOutlined, SendOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
+import axios from "axios";
+
+const { TextArea } = Input;
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
@@ -13,6 +16,7 @@ export default function MKTToFAT() {
 
     const [data, setData] = useState([]);
 
+    const [noteCancel, setNoteCancel] = useState("");
 
     // Selected rows (Sekarang menyimpan Object Group / Parent)
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
@@ -25,6 +29,10 @@ export default function MKTToFAT() {
     const [searchText, setSearchText] = useState("");
     const [searchedColumn, setSearchedColumn] = useState("");
     const searchInput = useRef(null);
+
+
+    const [isModalCancelOpen, setIsModalCancelopen] = useState(false);
+    const [itemToCancel, setItemToCancel] = useState(null);
 
     // ================== SEARCH LOGIC ==================
     const handleSearch = (selectedKeys, confirm, dataIndex) => {
@@ -103,6 +111,7 @@ export default function MKTToFAT() {
             const mapped = json.data.data.map((row, index) => ({
                 key: row.m_inout_id,
                 m_inout_id: row.m_inout_id,
+                adw_trackingsj_id: row.adw_trackingsj_id,
                 no: index + 1,
                 documentno: row.documentno,
                 customer: row.customer,
@@ -111,7 +120,8 @@ export default function MKTToFAT() {
                 driverby: row.driverby,
                 tnkb_id: row.tnkb_id,
                 drivername: row.drivername,
-                sppno: row.sppno
+                sppno: row.sppno,
+                cancelrequestmkt: row.cancelrequestmkt,
             }));
 
             setData(mapped);
@@ -179,6 +189,11 @@ export default function MKTToFAT() {
         }
     ];
 
+    const showModalCancel = (shipment) => {
+        setItemToCancel(shipment);
+        setIsModalCancelopen(true);
+    };
+
 
     // ================== CHILD TABLE COLUMNS ==================
     const childColumns = [
@@ -204,7 +219,25 @@ export default function MKTToFAT() {
             key: "plantime",
             render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-',
         },
+        {
+            title: "Actions",
+            key: "actions",
+            width: 120,
+            render: (_, record) => {
+                if (record.cancelrequestmkt == 'N') {
+                    return (<Button onClick={() => showModalCancel(record)}
+                        icon={<CloseOutlined />} size='small' danger>Cancel</Button>)
+                } else {
+                    return (<Tag color={"warning"} variant={'solid'}>
+                        Waiting
+                    </Tag>)
+                }
+
+
+            }
+        }
     ];
+
 
     // ================== ROW SELECTION (PARENT) ==================
     const rowSelection = {
@@ -304,6 +337,39 @@ export default function MKTToFAT() {
         }
     };
 
+    const handleCancelOk = async () => {
+        try {
+
+            const payload = {
+                itemToCancel,
+                noteCancel
+            }
+
+            const res = await axios.post(`${backEndUrl}/tms/req/cancel/mkt`, payload, { withCredentials: true });
+
+            if (res.data.success) {
+                notification.success({ message: 'Info', description: `Dokumen ${payload.itemToCancel.documentno} akan diproses untuk dicancel.` });
+                fetchData();
+            } else {
+                notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
+            }
+        } catch (error) {
+            console.error("Submit error:", error);
+            notification.error({ message: 'cancel Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
+        } finally {
+            setIsModalCancelopen(false);
+            setItemToCancel(null);
+            setNoteCancel("")
+        }
+
+    };
+
+    const handleCancelClose = () => {
+        setIsModalCancelopen(false);
+        setItemToCancel(null);
+    };
+
+
     // Helper untuk cek apakah tombol handover harus disable
     const isHandoverDisabled = () => {
         if (selectedGroupRows.length === 0) return true;
@@ -362,6 +428,21 @@ export default function MKTToFAT() {
                         </div>
                     ))}
                 </div>
+            </Modal>
+
+            <Modal
+                title="Confirm cancel"
+                open={isModalCancelOpen}
+                onOk={handleCancelOk}
+                onCancel={handleCancelClose}
+                okButtonProps={{ disabled: !noteCancel?.trim() }} // <- disable ketika kosong
+            >
+                <p>Apakah Anda yakin akan mecancel dokumen <strong>{itemToCancel?.documentno}</strong>?</p>
+
+                Notes:
+                <TextArea rows={4}
+                    value={noteCancel}
+                    onChange={(e) => setNoteCancel(e.target.value)} />
             </Modal>
         </LayoutGlobal>
     );

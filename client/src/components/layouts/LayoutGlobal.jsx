@@ -276,7 +276,7 @@ function LayoutGlobal({ children }) {
                     <div>
                         <div className="demo-logo-vertical" />
                         <Menu
-                            inlineIndent={28}
+                            inlineIndent={15}
                             theme="dark"
                             mode="inline"
                             selectedKeys={selectedKeys}

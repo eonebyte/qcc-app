@@ -4,8 +4,10 @@ import LayoutGlobal from "../../components/layouts/LayoutGlobal";
 import HistoryBundleHandover from "./HistoryBundleHandover";
 import HistoryBundleReceipt from "./HistoryBundleReceipt";
 import { useSelector } from "react-redux";
-
+import useIsMobile from "../../hooks/useIsMobile";
+import HistoryBundleMobile from "./HistoryBundleMobile";
 const HistoryBundle = () => {
+    const isMobile = useIsMobile();
     const user = useSelector((state) => state.auth.user);
     const role = user.title;
 
@@ -35,7 +37,7 @@ const HistoryBundle = () => {
     }
 
     // === CASE 2: ROLE selain FAT → normal menu ===
-    return (
+    return isMobile ? <HistoryBundleMobile /> : (
         <LayoutGlobal>
             <Menu
                 mode="horizontal"

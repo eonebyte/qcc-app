@@ -27,6 +27,9 @@ import MKTToFAT from './pages/tms/Handover/MKTToFAT';
 import FATFromMKT from './pages/tms/Receipt/FATFromMKT';
 import SettingConfig from './pages/tms/SettingConfig';
 import DropOnly from './pages/tms/DropOnly';
+import CheckOutMobile from './pages/tms/Handover/CheckOutMobile';
+import CheckOutDropOnlyMobile from './pages/tms/Handover/CheckOutDropOnlyMobile';
+
 
 function App() {
   const dispatch = useDispatch();
@@ -78,6 +81,9 @@ function App() {
 
       <Route path="/handover/mkt/to/fat" element={<MKTToFAT />} />
       <Route path="/receipt/fat/from/mkt" element={<FATFromMKT />} />
+
+      <Route path="/checkout/mobile" element={<CheckOutMobile />} />
+      <Route path="/checkout/mobile/do" element={<CheckOutDropOnlyMobile />} />
 
     </Routes>
   );

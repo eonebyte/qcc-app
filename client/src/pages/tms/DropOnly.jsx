@@ -1,13 +1,17 @@
 import React from 'react'
-import CheckInDropOnly from './Handover/CheckInDropOnly'
+import CheckOutDropOnly from './Handover/CheckOutDropOnly'
 import LayoutGlobal from '../../components/layouts/LayoutGlobal'
+import useIsMobile from '../../hooks/useIsMobile'
+import CheckOutDropOnlyMobile from './Handover/CheckOutDropOnlyMobile'
+
 
 export default function DropOnly() {
-    return (
+    const isMobile = useIsMobile()
+    return isMobile ? <CheckOutDropOnlyMobile /> :
         <div>
             <LayoutGlobal>
-                <CheckInDropOnly />
+                <CheckOutDropOnly />
             </LayoutGlobal>
         </div>
-    )
+
 }

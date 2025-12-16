@@ -1,607 +1,837 @@
-import React, { useState, useEffect } from 'react';
-import { DatePicker, Table, Steps, Typography, Spin, Modal, Button, Timeline, Input, Space, message } from 'antd';
+import React, { useState, useEffect } from "react";
 import {
-    HourglassOutlined,
-    FileTextOutlined,
-    CarOutlined,
-    AuditOutlined,
-    CheckCircleOutlined,
-    ClockCircleOutlined,
-    SearchOutlined,
-    TeamOutlined,
-    DownloadOutlined,
-} from '@ant-design/icons';
-import './ProgressShipment.css';
-import LayoutGlobal from '../../components/layouts/LayoutGlobal';
-import { useRef } from 'react';
-import Highlighter from 'react-highlight-words';
+  DatePicker,
+  Table,
+  Steps,
+  Typography,
+  Spin,
+  Modal,
+  Button,
+  Timeline,
+  Input,
+  Space,
+  message,
+} from "antd";
+import {
+  HourglassOutlined,
+  FileTextOutlined,
+  CarOutlined,
+  AuditOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  SearchOutlined,
+  TeamOutlined,
+  DownloadOutlined,
+} from "@ant-design/icons";
+import "./ProgressShipment.css";
+import LayoutGlobal from "../../components/layouts/LayoutGlobal";
+import { useRef } from "react";
+import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
 
 import { utils, writeFileXLSX } from "xlsx";
-
+import useIsMobile from "../../hooks/useIsMobile";
+import ProgressShipmentMobile from "./ProgressShipmentMobile";
 
 const { RangePicker } = DatePicker;
 
-
-const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
+const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 const { Title, Text } = Typography;
 
 const formatDateTime = (isoString) => {
-    if (!isoString) return null;
-    try {
-        const date = new Date(isoString);
+  if (!isoString) return null;
+  try {
+    const date = new Date(isoString);
 
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0'); // bulan mulai dari 0
-        const year = date.getFullYear();
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0"); // bulan mulai dari 0
+    const year = date.getFullYear();
 
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
 
-        return `${day}-${month}-${year} ${hours}:${minutes}`;
-    } catch (error) {
-        console.error("Invalid date format:", error);
-        return null;
-    }
+    return `${day}-${month}-${year} ${hours}:${minutes}`;
+  } catch (error) {
+    console.error("Invalid date format:", error);
+    return null;
+  }
 };
 
-
 const formatTime = (isoString) => {
-    if (!isoString) return '-';
-    try {
-        const date = new Date(isoString);
-        return date.toLocaleTimeString('id-ID', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-        });
-    } catch (error) {
-        console.error("Invalid date format:", error);
-        return '-';
-    }
+  if (!isoString) return "-";
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch (error) {
+    console.error("Invalid date format:", error);
+    return "-";
+  }
 };
 
 const stepDefinitions = [
-    { title: 'Delivery', icon: <HourglassOutlined style={{ fontSize: 10 }} />, handoverKey: 'ho_delivery_to_dpk', handoverByKey: 'ho_delivery_to_dpkby_name', acceptKey: 'accept_dpk_from_delivery', acceptByKey: 'accept_dpk_from_deliveryby_name', preHandoverText: 'HO ke DPK', postHandoverText: 'Wait Acc. DPK' },
-    { title: 'DPK', icon: <FileTextOutlined />, handoverKey: 'ho_dpk_to_driver', handoverByKey: 'ho_dpk_to_driverby_name', acceptKey: 'accept_driver_from_dpk', acceptByKey: 'accept_driver_from_dpkby_name', preHandoverText: 'Handover ke Driver', postHandoverText: 'Wait Acc. Driver' },
-    // { title: 'Driver', icon: <CarOutlined />, handoverKey: 'ho_driver_to_dpk', handoverByKey: 'ho_driver_to_dpkby_name', acceptKey: 'accept_dpk_from_driver', acceptByKey: 'accept_dpk_from_driverby_name', preHandoverText: 'Check In to Customer', postHandoverText: 'Wait Acc. DPK' },
-    { title: 'Driver', icon: <CarOutlined />, handoverKey: 'ho_driver_to_customer', handoverByKey: 'ho_driver_to_customerby_name', acceptKey: 'accept_customer_from_driver', acceptByKey: 'accept_customer_from_driverby_name', preHandoverText: 'Check Out (Customer)', postHandoverText: 'Wait Diambil' },
-    { title: 'Customer', icon: <TeamOutlined />, handoverKey: 'ho_driver_to_dpk', handoverByKey: 'ho_driver_to_dpkby_name', acceptKey: 'accept_dpk_from_driver', acceptByKey: 'accept_dpk_from_driverby_name', preHandoverText: 'On Customer', postHandoverText: 'Wait Acc. DPK' },
-    { title: 'DPK', icon: <FileTextOutlined />, handoverKey: 'ho_dpk_to_delivery', handoverByKey: 'ho_dpk_to_deliveryby_name', acceptKey: 'accept_delivery_from_dpk', acceptByKey: 'accept_delivery_from_dpkby_name', preHandoverText: 'Handover ke Delivery', postHandoverText: 'Wait Acc. Delivery' },
-    { title: 'Delivery', icon: <HourglassOutlined />, handoverKey: 'ho_delivery_to_mkt', handoverByKey: 'ho_delivery_to_mktby_name', acceptKey: 'accept_mkt_from_delivery', acceptByKey: 'accept_mkt_from_deliveryby_name', preHandoverText: 'Handover ke MKT', postHandoverText: 'Wait Acc. MKT' },
-    { title: 'Marketing', icon: <AuditOutlined />, handoverKey: 'ho_mkt_to_fat', handoverByKey: 'ho_mkt_to_fatby_name', acceptKey: 'accept_fat_from_mkt', acceptByKey: 'accept_fat_from_mktby_name', preHandoverText: 'Handover ke FAT', postHandoverText: 'Wait Acc. FAT' },
-    { title: 'FAT', icon: <CheckCircleOutlined />, isFinal: true, acceptKey: 'accept_fat_from_mkt', acceptByKey: 'accept_fat_from_mktby_name' }
+  {
+    title: "Delivery",
+    icon: <HourglassOutlined style={{ fontSize: 10 }} />,
+    handoverKey: "ho_delivery_to_dpk",
+    handoverByKey: "ho_delivery_to_dpkby_name",
+    acceptKey: "accept_dpk_from_delivery",
+    acceptByKey: "accept_dpk_from_deliveryby_name",
+    preHandoverText: "HO ke DPK",
+    postHandoverText: "Wait Acc. DPK",
+  },
+  {
+    title: "DPK",
+    icon: <FileTextOutlined />,
+    handoverKey: "ho_dpk_to_driver",
+    handoverByKey: "ho_dpk_to_driverby_name",
+    acceptKey: "accept_driver_from_dpk",
+    acceptByKey: "accept_driver_from_dpkby_name",
+    preHandoverText: "Handover ke Driver",
+    postHandoverText: "Wait Acc. Driver",
+  },
+  // { title: 'Driver', icon: <CarOutlined />, handoverKey: 'ho_driver_to_dpk', handoverByKey: 'ho_driver_to_dpkby_name', acceptKey: 'accept_dpk_from_driver', acceptByKey: 'accept_dpk_from_driverby_name', preHandoverText: 'Check In to Customer', postHandoverText: 'Wait Acc. DPK' },
+  {
+    title: "Driver",
+    icon: <CarOutlined />,
+    handoverKey: "ho_driver_to_customer",
+    handoverByKey: "ho_driver_to_customerby_name",
+    acceptKey: "accept_customer_from_driver",
+    acceptByKey: "accept_customer_from_driverby_name",
+    preHandoverText: "Check Out (Customer)",
+    postHandoverText: "Wait Diambil",
+  },
+  {
+    title: "Customer",
+    icon: <TeamOutlined />,
+    handoverKey: "ho_driver_to_dpk",
+    handoverByKey: "ho_driver_to_dpkby_name",
+    acceptKey: "accept_dpk_from_driver",
+    acceptByKey: "accept_dpk_from_driverby_name",
+    preHandoverText: "On Customer",
+    postHandoverText: "Wait Acc. DPK",
+  },
+  {
+    title: "DPK",
+    icon: <FileTextOutlined />,
+    handoverKey: "ho_dpk_to_delivery",
+    handoverByKey: "ho_dpk_to_deliveryby_name",
+    acceptKey: "accept_delivery_from_dpk",
+    acceptByKey: "accept_delivery_from_dpkby_name",
+    preHandoverText: "Handover ke Delivery",
+    postHandoverText: "Wait Acc. Delivery",
+  },
+  {
+    title: "Delivery",
+    icon: <HourglassOutlined />,
+    handoverKey: "ho_delivery_to_mkt",
+    handoverByKey: "ho_delivery_to_mktby_name",
+    acceptKey: "accept_mkt_from_delivery",
+    acceptByKey: "accept_mkt_from_deliveryby_name",
+    preHandoverText: "Handover ke MKT",
+    postHandoverText: "Wait Acc. MKT",
+  },
+  {
+    title: "Marketing",
+    icon: <AuditOutlined />,
+    handoverKey: "ho_mkt_to_fat",
+    handoverByKey: "ho_mkt_to_fatby_name",
+    acceptKey: "accept_fat_from_mkt",
+    acceptByKey: "accept_fat_from_mktby_name",
+    preHandoverText: "Handover ke FAT",
+    postHandoverText: "Wait Acc. FAT",
+  },
+  {
+    title: "FAT",
+    icon: <CheckCircleOutlined />,
+    isFinal: true,
+    acceptKey: "accept_fat_from_mkt",
+    acceptByKey: "accept_fat_from_mktby_name",
+  },
 ];
 
-const headerSteps = stepDefinitions.map(step => ({ title: step.title }));
+const headerSteps = stepDefinitions.map((step) => ({ title: step.title }));
 
 const ProgressShipment = () => {
-    // State
-    const [shipmentData, setShipmentData] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [exportLoading, setExportLoading] = useState(false);
-    const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 5,
-        total: 0
-    });
-    const [isModalVisible, setIsModalVisible] = useState(false);
-    const [timelineData, setTimelineData] = useState(null);
-    const [searchText, setSearchText] = useState('');
-    const [searchedColumn, setSearchedColumn] = useState('');
-    const searchInput = useRef(null);
+  const isMobile = useIsMobile();
+  // State
+  const [shipmentData, setShipmentData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 5,
+    total: 0,
+  });
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [timelineData, setTimelineData] = useState(null);
+  const [searchText, setSearchText] = useState("");
+  const [searchedColumn, setSearchedColumn] = useState("");
+  const searchInput = useRef(null);
 
-    const [dateRange, setDateRange] = useState([null, null]);
+  const [dateRange, setDateRange] = useState([null, null]);
 
-    const [filtersState, setFiltersState] = useState({});
+  const [filtersState, setFiltersState] = useState({});
 
+  const showTimelineModal = (record) => {
+    setTimelineData({ docNo: record.docNo, flow: record.flow });
+    setIsModalVisible(true);
+  };
 
+  const handleModalClose = () => {
+    setIsModalVisible(false);
+    setTimelineData(null);
+  };
 
-    const showTimelineModal = (record) => {
-        setTimelineData({ docNo: record.docNo, flow: record.flow });
-        setIsModalVisible(true);
-    };
+  // transformApiData menerima page & pageSize supaya nomor (no) selalu sesuai
+  const transformApiData = (apiData = [], page = 1, pageSize = 20) => {
+    if (!Array.isArray(apiData) || apiData.length === 0) return [];
 
-    const handleModalClose = () => {
-        setIsModalVisible(false);
-        setTimelineData(null);
-    };
+    const startIndex = (page - 1) * pageSize;
+    return apiData.map((item, dataIndex) => {
+      // aman-in property names: terima berbagai variasi huruf besar/kecil
+      const id =
+        item.m_inout_id ||
+        item.M_INOUT_ID ||
+        item.adw_trackingsj_id ||
+        item.id ||
+        dataIndex + startIndex + 1;
+      const documentno =
+        item.documentno ||
+        item.documentno ||
+        item.documentno ||
+        item.docNo ||
+        "";
+      const customer = item.customer;
+      const planTime = item.plantime;
 
-    // transformApiData menerima page & pageSize supaya nomor (no) selalu sesuai
-    const transformApiData = (apiData = [], page = 1, pageSize = 20) => {
-        if (!Array.isArray(apiData) || apiData.length === 0) return [];
+      const notes = item.notes;
+      const iscancel = item.iscancel;
 
-        const startIndex = (page - 1) * pageSize;
-        return apiData.map((item, dataIndex) => {
-            // aman-in property names: terima berbagai variasi huruf besar/kecil
-            const id = item.m_inout_id || item.M_INOUT_ID || item.adw_trackingsj_id || item.id || (dataIndex + startIndex + 1);
-            const documentno = item.documentno || item.documentno || item.documentno || item.docNo || '';
-            const customer = item.customer;
-            const planTime = item.plantime;
+      const flow = stepDefinitions.map((step, stepIndex) => {
+        const handoverTimestamp = item[step.handoverKey];
+        const acceptTimestamp = item[step.acceptKey];
+        const prevStep = stepIndex > 0 ? stepDefinitions[stepIndex - 1] : null;
+        const isPrevStepAccepted = prevStep ? !!item[prevStep.acceptKey] : true;
 
-            const flow = stepDefinitions.map((step, stepIndex) => {
-                const handoverTimestamp = item[step.handoverKey];
-                const acceptTimestamp = item[step.acceptKey];
-                const prevStep = stepIndex > 0 ? stepDefinitions[stepIndex - 1] : null;
-                const isPrevStepAccepted = prevStep ? !!item[prevStep.acceptKey] : true;
+        let status = "pending",
+          displayValue = "Wait",
+          displayTime = "-";
 
-                let status = 'pending', displayValue = 'Wait', displayTime = '-';
+        if (acceptTimestamp) {
+          status = "completed";
+          displayValue = "Selesai";
+          displayTime =
+            formatTime(handoverTimestamp) + " / " + formatTime(acceptTimestamp);
+        } else if (isPrevStepAccepted) {
+          status = "in_progress";
+          if (handoverTimestamp) {
+            displayValue = step.postHandoverText;
+            displayTime = formatTime(handoverTimestamp);
+          } else {
+            displayValue = step.preHandoverText;
+            displayTime = prevStep ? formatTime(item[prevStep.acceptKey]) : "-";
+          }
+        }
 
-                if (acceptTimestamp) {
-                    status = 'completed';
-                    displayValue = 'Selesai';
-                    displayTime = formatTime(handoverTimestamp) + " / " + formatTime(acceptTimestamp);
-                } else if (isPrevStepAccepted) {
-                    status = 'in_progress';
-                    if (handoverTimestamp) {
-                        displayValue = step.postHandoverText;
-                        displayTime = formatTime(handoverTimestamp);
-                    } else {
-                        displayValue = step.preHandoverText;
-                        displayTime = prevStep ? formatTime(item[prevStep.acceptKey]) : '-';
-                    }
-                }
+        if (step.isFinal && acceptTimestamp) {
+          status = "completed";
+          displayValue = "Selesai";
+          displayTime = formatTime(acceptTimestamp);
+        }
 
-                if (step.isFinal && acceptTimestamp) {
-                    status = 'completed';
-                    displayValue = 'Selesai';
-                    displayTime = formatTime(acceptTimestamp);
-                }
-
-                const rawData = {
-                    handoverTime: item[step.handoverKey],
-                    handoverBy: item[step.handoverByKey],
-                    acceptTime: item[step.acceptKey],
-                    acceptBy: item[step.acceptByKey]
-                };
-
-                // =========================================
-                // Custom text untuk Check In ke Customer
-                // =========================================
-                if (step.title === 'Driver' && status === 'in_progress') {
-                    if (!item.adw_tms_id) {
-                        displayValue = 'Process Cek Security';
-                    } else {
-                        displayValue = 'Check Out (Customer)';
-                    }
-                }
-
-
-                return {
-                    title: step.title,
-                    status,
-                    value: displayValue,
-                    time: displayTime,
-                    icon: step.icon,
-                    rawData
-                };
-            });
-
-            return {
-                key: String(id),
-                m_inout_id: id,
-                no: startIndex + dataIndex + 1,
-                docNo: documentno,
-                customer: customer,
-                planTime: planTime,
-                flow
-            };
-        });
-    };
-
-    const fetchData = async (current = 1, pageSize = 10, dateRangeParam = dateRange, filters = {}) => {
-        setLoading(true);
-
-        const params = {
-            page: current,
-            limit: pageSize,
+        const rawData = {
+          handoverTime: item[step.handoverKey],
+          handoverBy: item[step.handoverByKey],
+          acceptTime: item[step.acceptKey],
+          acceptBy: item[step.acceptByKey],
         };
 
-        if (dateRangeParam && dateRangeParam[0]) {
-            params.startDate = dateRangeParam[0].format("YYYY-MM-DD");
+        // =========================================
+        // Custom text untuk Check In ke Customer
+        // =========================================
+        if (step.title === "Driver" && status === "in_progress") {
+          if (!item.adw_tms_id) {
+            displayValue = "Process Cek Security";
+          } else {
+            displayValue = "Check Out (Customer)";
+          }
         }
-        if (dateRangeParam && dateRangeParam[1]) {
-            params.endDate = dateRangeParam[1].format("YYYY-MM-DD");
-        }
 
-        Object.keys(filters).forEach(key => {
-            if (filters[key]) {
-                params[key] = filters[key];
-            }
-        });
+        return {
+          title: step.title,
+          status,
+          value: displayValue,
+          time: displayTime,
+          icon: step.icon,
+          rawData,
+        };
+      });
 
-        const queryString = new URLSearchParams(params).toString();
+      return {
+        key: String(id),
+        m_inout_id: id,
+        no: startIndex + dataIndex + 1,
+        docNo: documentno,
+        customer: customer,
+        planTime: planTime,
+        notes: notes,
+        iscancel: iscancel,
+        flow,
+      };
+    });
+  };
 
+  const fetchData = async (
+    current = 1,
+    pageSize = 10,
+    dateRangeParam = dateRange,
+    filters = {},
+  ) => {
+    setLoading(true);
 
-        try {
-
-            const res = await fetch(
-                `${backEndUrl}/tms/history?${queryString}`,
-                { credentials: "include", }
-            );
-
-            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-            const result = await res.json();
-
-            // Robust parsing: terima banyak bentuk response
-            let payload = [];
-            let meta = {};
-
-            // candidate arrays in preference order
-            const candidates = [
-                result?.data?.data,
-                result?.data,
-                result?.items,
-                result?.result,
-                result
-            ];
-
-            for (const c of candidates) {
-                if (Array.isArray(c)) {
-                    payload = c;
-                    break;
-                }
-            }
-
-            // attempt to find meta/total
-            meta = result?.data?.meta || result?.meta || result?.pagination || {};
-
-            // fallback if payload still empty (safeguard)
-            if (!Array.isArray(payload)) payload = [];
-
-            const transformed = transformApiData(payload, current, pageSize);
-
-            setShipmentData(transformed);
-
-            // determine total count from various possible keys
-            const totalFromMeta = meta?.total || meta?.count || result?.total || 0;
-
-            setPagination(prev => ({
-                ...prev,
-                current: meta?.current_page || current,
-                pageSize: meta?.per_page || pageSize,
-                total: Number(totalFromMeta)
-            }));
-        } catch (error) {
-            console.error("Gagal mengambil data dari API:", error);
-        } finally {
-            setLoading(false);
-        }
+    const params = {
+      page: current,
+      limit: pageSize,
     };
 
-    // --- HANDLE EXPORT EXCEL ---
-    const handleExportExcel = async () => {
-        setExportLoading(true);
-        try {
-            // 1. Siapkan Parameter "Unlimited"
-            // Backend akan mendeteksi limit 0 sebagai instruksi untuk mengambil semua data
-            // dan menangani pemecahan query (chunking) secara internal.
-            const params = {
-                page: 0,
-                limit: 0,
-            };
+    if (dateRangeParam && dateRangeParam[0]) {
+      params.startDate = dateRangeParam[0].format("YYYY-MM-DD");
+    }
+    if (dateRangeParam && dateRangeParam[1]) {
+      params.endDate = dateRangeParam[1].format("YYYY-MM-DD");
+    }
 
-            // 2. Tambahkan Tanggal
-            if (dateRange && dateRange[0]) {
-                params.startDate = dateRange[0].format("YYYY-MM-DD");
-            }
-            if (dateRange && dateRange[1]) {
-                params.endDate = dateRange[1].format("YYYY-MM-DD");
-            }
-
-            // 3. Tambahkan Filter Pencarian
-            if (filtersState && Object.keys(filtersState).length > 0) {
-                Object.entries(filtersState).forEach(([key, value]) => {
-                    if (value !== undefined && value !== null && value !== '') {
-                        params[key] = value;
-                    }
-                });
-            }
-
-            const queryString = new URLSearchParams(params).toString();
-            console.log("Exporting All Data...", queryString);
-
-            // 4. Fetch Data
-            const res = await fetch(
-                `${backEndUrl}/tms/history?${queryString}`,
-                { credentials: "include" }
-            );
-
-            if (!res.ok) throw new Error("Gagal mengambil data untuk export");
-            const result = await res.json();
-
-            // 5. Extract Data
-            let rawData = [];
-            const candidates = [result?.data?.data, result?.data, result?.items, result?.result, result];
-            for (const c of candidates) {
-                if (Array.isArray(c)) { rawData = c; break; }
-            }
-
-            if (!rawData || rawData.length === 0) {
-                Modal.warning({
-                    title: "Tidak Ada Data",
-                    content: "Tidak ada data untuk diexport.",
-                });
-                return;
-            }
-
-            // 6. Formatting Data Excel
-            const excelData = rawData.map((item, index) => {
-                const row = {
-                    "No": index + 1,
-                    "Customer": item.customer || '-',
-                    "No. Doc": item.documentno || item.docNo || '-',
-                    "Tanggal Plan": item.plantime ? formatDateTime(item.plantime) : '-',
-                };
-
-                stepDefinitions.forEach(step => {
-                    const prefix = step.title;
-                    if (step.handoverKey) {
-                        row[`${prefix} Handover Date`] = item[step.handoverKey] ? formatDateTime(item[step.handoverKey]) : '-';
-                        row[`${prefix} Handover By`] = item[step.handoverByKey] || '-';
-                    }
-                    if (step.acceptKey) {
-                        row[`${prefix} Accept Date`] = item[step.acceptKey] ? formatDateTime(item[step.acceptKey]) : '-';
-                        row[`${prefix} Accept By`] = item[step.acceptByKey] || '-';
-                    }
-                });
-                return row;
-            });
-
-            // 7. Generate Excel File
-            const worksheet = utils.json_to_sheet(excelData);
-            const wscols = Object.keys(excelData[0]).map(() => ({ wch: 20 }));
-            worksheet['!cols'] = wscols;
-
-            const workbook = utils.book_new();
-            utils.book_append_sheet(workbook, worksheet, "Shipment Report");
-
-            const startDateName = dateRange && dateRange[0] ? dateRange[0].format("YYYY-MM-DD") : "All";
-            const fileName = `Report_Shipment_${startDateName}.xlsx`;
-
-            writeFileXLSX(workbook, fileName);
-            message.success(`Berhasil export ${rawData.length} data ke Excel`);
-
-        } catch (error) {
-            console.error("Export Error:", error);
-            message.error("Gagal melakukan export excel: " + error.message);
-        } finally {
-            setExportLoading(false);
-        }
-    };
-
-    const handleTableChange = (pag, filters, sorter, extra) => {
-        // PERBAIKAN: Cegah double fetch.
-        // Jika action adalah 'filter', kita abaikan di sini karena handleSearch
-        // atau handleReset yang akan melakukan fetch secara manual dengan data yang akurat.
-        if (extra.action === 'filter') return;
-
-        fetchData(pag.current, pag.pageSize, dateRange, filtersState);
-    };
-
-    useEffect(() => {
-        // initial load
-        fetchData(1, pagination.pageSize);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const handleSearch = async (selectedKeys, confirm, dataIndex) => {
-        // 1. Simpan ke state (untuk keperluan pagination nanti & export)
-        const newFilters = { ...filtersState, [dataIndex]: selectedKeys[0] };
-        setFiltersState(newFilters);
-        setSearchText(selectedKeys[0]);
-        setSearchedColumn(dataIndex);
-
-        // 2. Close dropdown UI
-        confirm();
-
-        // 3. Fetch manual dengan data filter YANG BARU (jangan pakai filtersState karena async)
-        // Reset ke page 1 setiap kali search
-        await fetchData(1, pagination.pageSize, dateRange, newFilters);
-    };
-
-    const handleReset = (clearFilters, dataIndex, confirm) => {
-        clearFilters();
-        setSearchText('');
-
-        // Hapus filter dari state
-        const newFilters = { ...filtersState };
-        delete newFilters[dataIndex];
-        setFiltersState(newFilters);
-
-        // Close dropdown & trigger UI update
-        confirm();
-
-        // Fetch ulang data bersih
-        fetchData(1, pagination.pageSize, dateRange, newFilters);
-    };
-
-
-
-    const getColumnSearchProps = (dataIndex) => ({
-        filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters, close }) => (
-            <div style={{ padding: 8 }} onKeyDown={e => e.stopPropagation()}>
-                <Input
-                    ref={searchInput}
-                    placeholder={`Search ${dataIndex}`}
-                    value={selectedKeys[0]}
-                    onChange={e => setSelectedKeys(e.target.value ? [e.target.value] : [])}
-                    onPressEnter={() => handleSearch(selectedKeys, confirm, dataIndex)}
-                    style={{ marginBottom: 8, display: 'block' }}
-                />
-                <Space>
-                    <Button type="primary" onClick={() => handleSearch(selectedKeys, confirm, dataIndex)} icon={<SearchOutlined />} size="small" style={{ width: 90 }}>Search</Button>
-                    <Button
-                        onClick={() => clearFilters && handleReset(clearFilters, dataIndex)}
-                        size="small"
-                        style={{ width: 90 }}
-                    >
-                        Reset
-                    </Button>
-                    <Button type="link" size="small" onClick={() => { confirm({ closeDropdown: false }); setSearchText(selectedKeys[0]); setSearchedColumn(dataIndex); }}>Filter</Button>
-                    <Button type="link" size="small" onClick={() => { close(); }}>Close</Button>
-                </Space>
-            </div>
-        ),
-        filterIcon: (filtered) => <SearchOutlined style={{ color: filtered ? '#1677ff' : undefined }} />,
-        // onFilter: (value, record) => record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
-        render: (text) => searchedColumn === dataIndex ? (<Highlighter highlightStyle={{ backgroundColor: '#ffc069', padding: 0 }} searchWords={[searchText]} autoEscape textToHighlight={text ? text.toString() : ''} />) : (text),
+    Object.keys(filters).forEach((key) => {
+      if (filters[key]) {
+        params[key] = filters[key];
+      }
     });
 
+    const queryString = new URLSearchParams(params).toString();
 
-    const columns = [
-        { title: 'No', dataIndex: 'no', key: 'no' },
-        { title: 'Customer', dataIndex: 'customer', key: 'customer', ...getColumnSearchProps('customer') },
-        { title: 'No. Doc', dataIndex: 'docNo', key: 'docNo', ...getColumnSearchProps('docNo') },
-        {
-            title: 'Date',
-            dataIndex: 'planTime',
-            key: 'planTime',
-            ...getColumnSearchProps('planTime'),
-            render: (value) => value ? dayjs(value).format('YYYY-MM-DD') : '',
-            sorter: (a, b) => dayjs(a.planTime).unix() - dayjs(b.planTime).unix(),
-            sortDirections: ['ascend', 'descend'],
-        },
-        {
-            title: (<Steps initial={1} size='small' progressDot items={headerSteps} className="timeline-header-steps" />),
-            dataIndex: 'flow',
-            key: 'flow',
-            render: (flow, record) => {
-                const currentStepIndex = flow.findIndex(step => step.status === 'in_progress');
-                const stepItems = flow.map(step => {
-                    let antdStatus, valueColor, finalIcon;
-                    if (step.status === 'completed') {
-                        antdStatus = 'finish';
-                        valueColor = '#389e0d';
-                        finalIcon = <CheckCircleOutlined style={{ color: valueColor }} />;
-                    } else if (step.status === 'in_progress') {
-                        antdStatus = 'process';
-                        valueColor = '#1890ff';
-                        // jangan render Spin untuk semua baris besar jika performance jadi issue
-                        finalIcon = <Spin indicator={React.cloneElement(step.icon, { style: { fontSize: '18px', color: valueColor }, spin: true })} />;
-                    } else {
-                        antdStatus = 'wait';
-                        valueColor = 'rgba(0, 0, 0, 0.45)';
-                        finalIcon = React.cloneElement(step.icon, { style: { color: 'rgba(0, 0, 0, 0.25)' } });
-                    }
-                    return {
-                        status: antdStatus,
-                        icon: finalIcon,
-                        title: (<>{step.title}</>),
-                        description: (
-                            <Button
-                                type="link"
-                                size="small"
-                                style={{ padding: 0, height: 'auto', lineHeight: 'inherit', textAlign: 'left' }}
-                                onClick={() => showTimelineModal(record)}
-                            >
-                                <Text strong className="step-value" style={{ color: valueColor, marginTop: 0 }}>
-                                    <span>{step.value || 'Wait'}</span>
-                                </Text>
-                            </Button>
-                        ),
-                    };
-                });
-                return <Steps size="small" current={currentStepIndex} items={stepItems} labelPlacement="vertical" className="compact-timeline-steps" />;
-            },
-        },
-    ];
+    try {
+      const res = await fetch(`${backEndUrl}/tms/history?${queryString}`, {
+        credentials: "include",
+      });
 
-    return (
-        <LayoutGlobal>
-            <div style={{ padding: 10 }}>
-                <Space style={{ marginBottom: 16 }}>
-                    <RangePicker
-                        format="YYYY-MM-DD"
-                        onChange={(dates) => {
-                            setDateRange(dates); // hanya simpan, jangan fetch
-                        }}
-                    />
-                    <Button icon={<SearchOutlined />} type="primary" onClick={() => fetchData(1, pagination.pageSize, dateRange)}>
-                    </Button>
-                    <Button
-                        icon={<DownloadOutlined />}
-                        onClick={handleExportExcel}
-                        loading={exportLoading}
-                    >
-                    </Button>
-                </Space>
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const result = await res.json();
 
-                {/* <Title level={4}>Progress Pengiriman Dokumen</Title> */}
-                <Table
-                    className="surat-jalan-table"
-                    columns={columns}
-                    dataSource={shipmentData}
-                    pagination={{
-                        ...pagination,
-                        showSizeChanger: true,
-                        showTotal: (total, range) => `${range[0]}-${range[1]} dari ${total}`
-                    }}
-                    loading={loading}
-                    onChange={handleTableChange}
-                    bordered
-                    scroll={{ x: 'max-content' }}
-                    rowKey={(record) => record.m_inout_id || record.key}
-                />
+      console.log("result api : ", result);
 
-                {timelineData && (
-                    <Modal
-                        title={`Timeline Dokumen: ${timelineData.docNo}`}
-                        open={isModalVisible}
-                        onCancel={handleModalClose}
-                        footer={[<Button key="close" onClick={handleModalClose}>Tutup</Button>]}
-                        width={600}
-                    >
-                        <Timeline mode="left" style={{ paddingLeft: 0 }}>
-                            {[...timelineData.flow].reverse().map((step, index) => {
-                                const handoverTime = formatDateTime(step.rawData.handoverTime);
-                                const acceptTime = formatDateTime(step.rawData.acceptTime);
+      // Robust parsing: terima banyak bentuk response
+      let payload = [];
+      let meta = {};
 
-                                if (!handoverTime && !acceptTime) return null;
+      // candidate arrays in preference order
+      const candidates = [
+        result?.data?.data,
+        result?.data,
+        result?.items,
+        result?.result,
+        result,
+      ];
 
-                                return (
-                                    <Timeline.Item
-                                        key={index}
-                                        dot={<ClockCircleOutlined />}
-                                    >
-                                        <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
-                                            {step.title === 'Customer' ? 'Customer (Driver Auto to DPK)' : step.title}
-                                        </div>
+      for (const c of candidates) {
+        if (Array.isArray(c)) {
+          payload = c;
+          break;
+        }
+      }
 
-                                        {(handoverTime || acceptTime) && (
-                                            <div style={{ display: 'flex', gap: '16px' }}>
-                                                {handoverTime && (
-                                                    <span>
-                                                        <strong>{step.title === 'Driver' || step.title === 'Customer' ? 'CO: ' : 'HO: '}</strong>
-                                                        {handoverTime}
-                                                        {step.rawData.handoverBy && ` by ${step.rawData.handoverBy}`}
-                                                    </span>
-                                                )}
-                                                {(handoverTime && acceptTime && step.title !== "Driver" && step.title !== "Customer") && <span> {`->`} </span>}
-                                                {(acceptTime && step.title !== "Driver" && step.title !== "Customer") && (
-                                                    <span>
-                                                        <strong>Receipt:</strong> {acceptTime}
-                                                        {step.rawData.acceptBy && ` by ${step.rawData.acceptBy}`}
-                                                    </span>
-                                                )}
-                                                {/* <span>
+      // attempt to find meta/total
+      meta = result?.data?.meta || result?.meta || result?.pagination || {};
+
+      // fallback if payload still empty (safeguard)
+      if (!Array.isArray(payload)) payload = [];
+
+      const transformed = transformApiData(payload, current, pageSize);
+
+      console.log("test data : ", transformed);
+
+      setShipmentData(transformed);
+
+      // determine total count from various possible keys
+      const totalFromMeta = meta?.total || meta?.count || result?.total || 0;
+
+      setPagination((prev) => ({
+        ...prev,
+        current: meta?.current_page || current,
+        pageSize: meta?.per_page || pageSize,
+        total: Number(totalFromMeta),
+      }));
+    } catch (error) {
+      console.error("Gagal mengambil data dari API:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- HANDLE EXPORT EXCEL ---
+  const handleExportExcel = async () => {
+    setExportLoading(true);
+    try {
+      // 1. Siapkan Parameter "Unlimited"
+      // Backend akan mendeteksi limit 0 sebagai instruksi untuk mengambil semua data
+      // dan menangani pemecahan query (chunking) secara internal.
+      const params = {
+        page: 0,
+        limit: 0,
+      };
+
+      // 2. Tambahkan Tanggal
+      if (dateRange && dateRange[0]) {
+        params.startDate = dateRange[0].format("YYYY-MM-DD");
+      }
+      if (dateRange && dateRange[1]) {
+        params.endDate = dateRange[1].format("YYYY-MM-DD");
+      }
+
+      // 3. Tambahkan Filter Pencarian
+      if (filtersState && Object.keys(filtersState).length > 0) {
+        Object.entries(filtersState).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== "") {
+            params[key] = value;
+          }
+        });
+      }
+
+      const queryString = new URLSearchParams(params).toString();
+      console.log("Exporting All Data...", queryString);
+
+      // 4. Fetch Data
+      const res = await fetch(`${backEndUrl}/tms/history?${queryString}`, {
+        credentials: "include",
+      });
+
+      if (!res.ok) throw new Error("Gagal mengambil data untuk export");
+      const result = await res.json();
+
+      // 5. Extract Data
+      let rawData = [];
+      const candidates = [
+        result?.data?.data,
+        result?.data,
+        result?.items,
+        result?.result,
+        result,
+      ];
+      for (const c of candidates) {
+        if (Array.isArray(c)) {
+          rawData = c;
+          break;
+        }
+      }
+
+      if (!rawData || rawData.length === 0) {
+        Modal.warning({
+          title: "Tidak Ada Data",
+          content: "Tidak ada data untuk diexport.",
+        });
+        return;
+      }
+
+      // 6. Formatting Data Excel
+      const excelData = rawData.map((item, index) => {
+        const row = {
+          No: index + 1,
+          Customer: item.customer || "-",
+          "No. Doc": item.documentno || item.docNo || "-",
+          "Tanggal Plan": item.plantime ? formatDateTime(item.plantime) : "-",
+        };
+
+        stepDefinitions.forEach((step) => {
+          const prefix = step.title;
+          if (step.handoverKey) {
+            row[`${prefix} Handover Date`] = item[step.handoverKey]
+              ? formatDateTime(item[step.handoverKey])
+              : "-";
+            row[`${prefix} Handover By`] = item[step.handoverByKey] || "-";
+          }
+          if (step.acceptKey) {
+            row[`${prefix} Accept Date`] = item[step.acceptKey]
+              ? formatDateTime(item[step.acceptKey])
+              : "-";
+            row[`${prefix} Accept By`] = item[step.acceptByKey] || "-";
+          }
+        });
+        return row;
+      });
+
+      // 7. Generate Excel File
+      const worksheet = utils.json_to_sheet(excelData);
+      const wscols = Object.keys(excelData[0]).map(() => ({ wch: 20 }));
+      worksheet["!cols"] = wscols;
+
+      const workbook = utils.book_new();
+      utils.book_append_sheet(workbook, worksheet, "Shipment Report");
+
+      const startDateName =
+        dateRange && dateRange[0] ? dateRange[0].format("YYYY-MM-DD") : "All";
+      const fileName = `Report_Shipment_${startDateName}.xlsx`;
+
+      writeFileXLSX(workbook, fileName);
+      message.success(`Berhasil export ${rawData.length} data ke Excel`);
+    } catch (error) {
+      console.error("Export Error:", error);
+      message.error("Gagal melakukan export excel: " + error.message);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleTableChange = (pag, filters, sorter, extra) => {
+    // PERBAIKAN: Cegah double fetch.
+    // Jika action adalah 'filter', kita abaikan di sini karena handleSearch
+    // atau handleReset yang akan melakukan fetch secara manual dengan data yang akurat.
+    if (extra.action === "filter") return;
+
+    fetchData(pag.current, pag.pageSize, dateRange, filtersState);
+  };
+
+  useEffect(() => {
+    // initial load
+    fetchData(1, pagination.pageSize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSearch = async (selectedKeys, confirm, dataIndex) => {
+    // 1. Simpan ke state (untuk keperluan pagination nanti & export)
+    const newFilters = { ...filtersState, [dataIndex]: selectedKeys[0] };
+    setFiltersState(newFilters);
+    setSearchText(selectedKeys[0]);
+    setSearchedColumn(dataIndex);
+
+    // 2. Close dropdown UI
+    confirm();
+
+    // 3. Fetch manual dengan data filter YANG BARU (jangan pakai filtersState karena async)
+    // Reset ke page 1 setiap kali search
+    await fetchData(1, pagination.pageSize, dateRange, newFilters);
+  };
+
+  const handleReset = (clearFilters, dataIndex, confirm) => {
+    clearFilters();
+    setSearchText("");
+
+    // Hapus filter dari state
+    const newFilters = { ...filtersState };
+    delete newFilters[dataIndex];
+    setFiltersState(newFilters);
+
+    // Close dropdown & trigger UI update
+    confirm();
+
+    // Fetch ulang data bersih
+    fetchData(1, pagination.pageSize, dateRange, newFilters);
+  };
+
+  const getColumnSearchProps = (dataIndex) => ({
+    filterDropdown: ({
+      setSelectedKeys,
+      selectedKeys,
+      confirm,
+      clearFilters,
+      close,
+    }) => (
+      <div style={{ padding: 8 }} onKeyDown={(e) => e.stopPropagation()}>
+        <Input
+          ref={searchInput}
+          placeholder={`Search ${dataIndex}`}
+          value={selectedKeys[0]}
+          onChange={(e) =>
+            setSelectedKeys(e.target.value ? [e.target.value] : [])
+          }
+          onPressEnter={() => handleSearch(selectedKeys, confirm, dataIndex)}
+          style={{ marginBottom: 8, display: "block" }}
+        />
+        <Space>
+          <Button
+            type="primary"
+            onClick={() => handleSearch(selectedKeys, confirm, dataIndex)}
+            icon={<SearchOutlined />}
+            size="small"
+            style={{ width: 90 }}
+          >
+            Search
+          </Button>
+          <Button
+            onClick={() => clearFilters && handleReset(clearFilters, dataIndex)}
+            size="small"
+            style={{ width: 90 }}
+          >
+            Reset
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => {
+              confirm({ closeDropdown: false });
+              setSearchText(selectedKeys[0]);
+              setSearchedColumn(dataIndex);
+            }}
+          >
+            Filter
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => {
+              close();
+            }}
+          >
+            Close
+          </Button>
+        </Space>
+      </div>
+    ),
+    filterIcon: (filtered) => (
+      <SearchOutlined style={{ color: filtered ? "#1677ff" : undefined }} />
+    ),
+    // onFilter: (value, record) => record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
+    render: (text) =>
+      searchedColumn === dataIndex ? (
+        <Highlighter
+          highlightStyle={{ backgroundColor: "#ffc069", padding: 0 }}
+          searchWords={[searchText]}
+          autoEscape
+          textToHighlight={text ? text.toString() : ""}
+        />
+      ) : (
+        text
+      ),
+  });
+
+  const columns = [
+    { title: "No", dataIndex: "no", key: "no" },
+    {
+      title: "Customer",
+      dataIndex: "customer",
+      key: "customer",
+      ...getColumnSearchProps("customer"),
+    },
+    {
+      title: "No. Doc",
+      dataIndex: "docNo",
+      key: "docNo",
+      ...getColumnSearchProps("docNo"),
+    },
+    {
+      title: "Notes",
+      dataIndex: "notes",
+      key: "notes",
+      ...getColumnSearchProps("notes"),
+    },
+    {
+      title: "Date",
+      dataIndex: "planTime",
+      key: "planTime",
+      ...getColumnSearchProps("planTime"),
+      render: (value) => (value ? dayjs(value).format("YYYY-MM-DD") : ""),
+      sorter: (a, b) => dayjs(a.planTime).unix() - dayjs(b.planTime).unix(),
+      sortDirections: ["ascend", "descend"],
+    },
+    {
+      title: (
+        <Steps
+          initial={1}
+          size="small"
+          progressDot
+          items={headerSteps}
+          className="timeline-header-steps"
+        />
+      ),
+      dataIndex: "flow",
+      key: "flow",
+      render: (flow, record) => {
+        const currentStepIndex = flow.findIndex(
+          (step) => step.status === "in_progress",
+        );
+        const stepItems = flow.map((step) => {
+          let antdStatus, valueColor, finalIcon;
+          if (step.status === "completed") {
+            antdStatus = "finish";
+            valueColor = "#389e0d";
+            finalIcon = <CheckCircleOutlined style={{ color: valueColor }} />;
+          } else if (step.status === "in_progress") {
+            antdStatus = "process";
+            valueColor = "#1890ff";
+            // jangan render Spin untuk semua baris besar jika performance jadi issue
+            finalIcon = (
+              <Spin
+                indicator={React.cloneElement(step.icon, {
+                  style: { fontSize: "18px", color: valueColor },
+                  spin: true,
+                })}
+              />
+            );
+          } else {
+            antdStatus = "wait";
+            valueColor = "rgba(0, 0, 0, 0.45)";
+            finalIcon = React.cloneElement(step.icon, {
+              style: { color: "rgba(0, 0, 0, 0.25)" },
+            });
+          }
+          return {
+            status: antdStatus,
+            icon: finalIcon,
+            title: <>{step.title}</>,
+            description: (
+              <Button
+                type="link"
+                size="small"
+                style={{
+                  padding: 0,
+                  height: "auto",
+                  lineHeight: "inherit",
+                  textAlign: "left",
+                }}
+                onClick={() => showTimelineModal(record)}
+              >
+                <Text
+                  strong
+                  className="step-value"
+                  style={{ color: valueColor, marginTop: 0 }}
+                >
+                  <span>{step.value || "Wait"}</span>
+                </Text>
+              </Button>
+            ),
+          };
+        });
+        return (
+          <Steps
+            size="small"
+            current={currentStepIndex}
+            items={stepItems}
+            labelPlacement="vertical"
+            className="compact-timeline-steps"
+          />
+        );
+      },
+    },
+  ];
+
+  return isMobile ? (
+    <ProgressShipmentMobile />
+  ) : (
+    <LayoutGlobal>
+      <div style={{ padding: 10 }}>
+        <Space style={{ marginBottom: 16 }}>
+          <RangePicker
+            format="YYYY-MM-DD"
+            onChange={(dates) => {
+              setDateRange(dates); // hanya simpan, jangan fetch
+            }}
+          />
+          <Button
+            icon={<SearchOutlined />}
+            type="primary"
+            onClick={() => fetchData(1, pagination.pageSize, dateRange)}
+          ></Button>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={handleExportExcel}
+            loading={exportLoading}
+          ></Button>
+        </Space>
+
+        {/* <Title level={4}>Progress Pengiriman Dokumen</Title> */}
+        <Table
+          className="surat-jalan-table"
+          columns={columns}
+          dataSource={shipmentData}
+          pagination={{
+            ...pagination,
+            showSizeChanger: true,
+            showTotal: (total, range) =>
+              `${range[0]}-${range[1]} dari ${total}`,
+          }}
+          loading={loading}
+          onChange={handleTableChange}
+          bordered
+          scroll={{ x: "max-content" }}
+          rowKey={(record) => record.m_inout_id || record.key}
+          rowClassName={(record) =>
+            record.iscancel === "Y" ? "row-cancelled" : ""
+          }
+        />
+
+        {timelineData && (
+          <Modal
+            title={`Timeline Dokumen: ${timelineData.docNo}`}
+            open={isModalVisible}
+            onCancel={handleModalClose}
+            footer={[
+              <Button key="close" onClick={handleModalClose}>
+                Tutup
+              </Button>,
+            ]}
+            width={600}
+          >
+            <Timeline mode="left" style={{ paddingLeft: 0 }}>
+              {[...timelineData.flow].reverse().map((step, index) => {
+                const handoverTime = formatDateTime(step.rawData.handoverTime);
+                const acceptTime = formatDateTime(step.rawData.acceptTime);
+
+                if (!handoverTime && !acceptTime) return null;
+
+                return (
+                  <Timeline.Item key={index} dot={<ClockCircleOutlined />}>
+                    <div style={{ fontWeight: "bold", marginBottom: 4 }}>
+                      {step.title === "Customer"
+                        ? "Customer (Driver Auto to DPK)"
+                        : step.title}
+                    </div>
+
+                    {(handoverTime || acceptTime) && (
+                      <div style={{ display: "flex", gap: "16px" }}>
+                        {handoverTime && (
+                          <span>
+                            <strong>
+                              {step.title === "Driver" ||
+                              step.title === "Customer"
+                                ? "CO: "
+                                : "HO: "}
+                            </strong>
+                            {handoverTime}
+                            {step.rawData.handoverBy &&
+                              ` by ${step.rawData.handoverBy}`}
+                          </span>
+                        )}
+                        {handoverTime &&
+                          acceptTime &&
+                          step.title !== "Driver" &&
+                          step.title !== "Customer" && <span> {`->`} </span>}
+                        {acceptTime &&
+                          step.title !== "Driver" &&
+                          step.title !== "Customer" && (
+                            <span>
+                              <strong>Receipt:</strong> {acceptTime}
+                              {step.rawData.acceptBy &&
+                                ` by ${step.rawData.acceptBy}`}
+                            </span>
+                          )}
+                        {/* <span>
                                                     <strong>Receipt:</strong> {acceptTime}
                                                     {step.rawData.acceptBy && ` by ${step.rawData.acceptBy}`}
                                                 </span> */}
-                                            </div>
-                                        )}
-                                    </Timeline.Item>
-
-                                );
-                            })}
-                        </Timeline>
-
-                    </Modal>
-                )}
-            </div>
-        </LayoutGlobal>
-    );
+                      </div>
+                    )}
+                  </Timeline.Item>
+                );
+              })}
+            </Timeline>
+          </Modal>
+        )}
+      </div>
+    </LayoutGlobal>
+  );
 };
 
 export default ProgressShipment;

@@ -18,7 +18,11 @@ export default function Login() {
         dispatch(login({ username, password })).then(async (result) => {
             if (result.payload && result.payload.success) {
                 console.log('Login successful:', result.payload);
-                navigate('/history');
+                if (result.payload.user.title === 'driver') {
+                    navigate('/handover/checkin/customer');
+                } else {
+                    navigate('/history');
+                }
             } else {
                 message.error(result.payload ? result.payload.message : 'Login failed');
             }
