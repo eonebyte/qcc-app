@@ -79,7 +79,7 @@ export default function LoginMobile() {
   // 2. HANDLER LOGIN PASSWORD (AWAL)
   // -------------------------------------------
   const onFinishPassword = async (values) => {
-    dispatch(login({ username: values.username, password: values.password })).then(async (result) => {
+    dispatch(login({ username: values.username, password: values.password, isMobile: true })).then(async (result) => {
       if (result.payload && result.payload.success) {
         
         if (result.payload.requirePinSetup) {

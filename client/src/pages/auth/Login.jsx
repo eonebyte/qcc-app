@@ -27,7 +27,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
 
   const onFinish = () => {
-    dispatch(login({ username, password })).then(async (result) => {
+    dispatch(login({ username, password, isMobile: false })).then(async (result) => {
       if (result.payload && result.payload.success) {
         console.log("Login successful:", result.payload);
         if (result.payload.user.title === "driver") {

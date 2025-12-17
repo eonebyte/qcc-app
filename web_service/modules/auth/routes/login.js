@@ -50,7 +50,8 @@ export default async function (fastify, options) {
   // 2. LOGIN (Password & PIN)
   // ---------------------------------------------------------
   fastify.post("/login", async (request, reply) => {
-    const { username, password, isPinLogin, pin } = request.body;
+    const { username, password, isPinLogin, pin, deviceId, isMobile } =
+      request.body;
     const dbClient = await fastify.pg.connect();
     let oracleConn;
 
@@ -167,6 +168,15 @@ export default async function (fastify, options) {
 
       if (userFound) {
         request.session.set("user", userFound);
+
+        if (!isMobile) {
+          return reply.send({
+            success: true,
+            source: source,
+            requirePinSetup: false, // Desktop tidak butuh PIN
+            user: userFound,
+          });
+        }
 
         // 1. Generate Device ID
         const newDeviceId = crypto.randomUUID();
