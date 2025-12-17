@@ -253,6 +253,7 @@ export default function LoginMobile() {
                     setNewPin(val);
                     if(val.length === 6) handleSetupPinComplete(val);
                 }}
+                style={{marginBottom: 150}}
               />
           </div>
       </Popup>
