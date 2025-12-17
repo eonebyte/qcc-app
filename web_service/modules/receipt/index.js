@@ -266,7 +266,7 @@ class Receipt {
     doc.text(to_act, rightX, sigStartY, { align: "center", width: boxWidth });
 
     // QR Code
-    const qrUrl = `${pathUrl}:3200/files/handover/${fileName}`;
+    const qrUrl = `${pathUrl}/files/handover/${fileName}`;
     const qrData = await qr.toDataURL(qrUrl);
     doc.image(qrData, centerX - 30, sigStartY - 5, { width: 60 });
 

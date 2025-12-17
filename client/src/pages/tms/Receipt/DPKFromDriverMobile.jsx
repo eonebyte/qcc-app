@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   Card,
   Button,
@@ -9,6 +9,8 @@ import {
   AutoCenter,
   PullToRefresh,
   SpinLoading,
+  SearchBar, // Import SearchBar
+  Tag,
 } from "antd-mobile";
 import { CalendarOutline, UserOutline, FileOutline } from "antd-mobile-icons";
 import dayjs from "dayjs";
@@ -19,9 +21,10 @@ const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 const DPKFromDriverMobile = () => {
   // --- STATE ---
-  const [dataList, setDataList] = useState([]);
+  const [dataList, setDataList] = useState([]); // Master Data
   const [loading, setLoading] = useState(false);
-  const [activeKey, setActiveKey] = useState([]); // Untuk Collapse
+  const [activeKey, setActiveKey] = useState([]); 
+  const [searchText, setSearchText] = useState(""); // State pencarian
 
   // --- FETCH DATA ---
   const fetchData = async () => {
@@ -47,7 +50,7 @@ const DPKFromDriverMobile = () => {
               ...bundle,
               key: bundle.bundleNo,
               shipments: processedShipments,
-              bundleSelected: false, // Untuk checkbox bundle
+              bundleSelected: false,
             };
           })
           .filter((bundle) => bundle.shipments.length > 0);
@@ -68,7 +71,53 @@ const DPKFromDriverMobile = () => {
     fetchData();
   }, []);
 
-  // --- HANDLER BUNDLE SELECTION ---
+  // --- LOGIC SEARCH & FILTERING (UX CORE) ---
+  // Menggunakan useMemo agar performa tetap ringan saat mengetik
+  const filteredData = useMemo(() => {
+    if (!searchText) return dataList;
+
+    const lowerSearch = searchText.toLowerCase();
+
+    return dataList
+      .map((bundle) => {
+        // 1. Cek apakah Bundle No cocok
+        const isBundleMatch = bundle.bundleNo.toLowerCase().includes(lowerSearch);
+        
+        // 2. Cek apakah ada shipment di dalam bundle yang cocok
+        const matchingShipments = bundle.shipments.filter((s) =>
+          s.documentno.toLowerCase().includes(lowerSearch)
+        );
+
+        // Logic: Jika Bundle No cocok, tampilkan semua isinya.
+        // Jika tidak, tampilkan hanya shipment yang cocok (jika ada).
+        if (isBundleMatch) {
+          return bundle;
+        } else if (matchingShipments.length > 0) {
+          return {
+            ...bundle,
+            shipments: matchingShipments, // Filter isinya agar user fokus ke yang dicari
+          };
+        }
+        return null; // Tidak ada yang cocok di bundle ini
+      })
+      .filter((item) => item !== null);
+  }, [dataList, searchText]);
+
+  // --- AUTO EXPAND SAAT SEARCHING ---
+  useEffect(() => {
+    if (searchText) {
+      // Jika sedang mencari, buka semua bundle hasil pencarian
+      const allKeys = filteredData.map((b) => b.key);
+      setActiveKey(allKeys);
+    } else {
+      // Jika clear search, tutup semua (atau biarkan state terakhir, opsional)
+      setActiveKey([]);
+    }
+  }, [searchText, filteredData]);
+
+
+  // --- HANDLER UPDATE STATE (Checkbox) ---
+  // Kita harus update Master Data (dataList), bukan filteredData
   const toggleBundleSelection = (bundleNo) => {
     setDataList((prev) =>
       prev.map((bundle) => {
@@ -80,7 +129,7 @@ const DPKFromDriverMobile = () => {
             shipments: bundle.shipments.map((s) => ({
               ...s,
               arrived: newStatus,
-            })), // Sync 'arrived' prop
+            })),
           };
         }
         return bundle;
@@ -88,13 +137,13 @@ const DPKFromDriverMobile = () => {
     );
   };
 
-  // --- HANDLER REJECT ITEM ---
   const handleRejectItem = (shipment) => {
     Dialog.confirm({
       title: "Konfirmasi Reject",
       content: `Reject dokumen ${shipment.documentno}?`,
       confirmText: "Reject",
       cancelText: "Batal",
+      confirmButtonColor: "danger",
       onConfirm: async () => {
         try {
           const res = await axios.post(`${backEndUrl}/tms/reject`, shipment, {
@@ -102,8 +151,7 @@ const DPKFromDriverMobile = () => {
           });
           if (res.data.success) {
             Toast.show({ content: "Dokumen direject", icon: "success" });
-            // Hapus item dari list lokal
-            fetchData(); // Refresh data untuk memastikan bundle update
+            fetchData();
           } else {
             Toast.show({
               content: res.data.message || "Gagal reject",
@@ -117,10 +165,8 @@ const DPKFromDriverMobile = () => {
     });
   };
 
-  // --- HANDLER SUBMIT (ACCEPT) ---
   const handleSubmit = () => {
     const selectedBundles = dataList.filter((b) => b.bundleSelected);
-
     if (selectedBundles.length === 0) return;
 
     Dialog.confirm({
@@ -129,22 +175,7 @@ const DPKFromDriverMobile = () => {
       cancelText: "Batal",
       content: (
         <div style={{ maxHeight: "40vh", overflowY: "auto" }}>
-          <p>Terima {selectedBundles.length} Bundle terpilih?</p>
-          <ul
-            style={{
-              paddingLeft: 20,
-              fontSize: 13,
-              textAlign: "left",
-              color: "#666",
-            }}
-          >
-            {selectedBundles.map((b) => (
-              <li key={b.key}>
-                <strong>{b.bundleNo}</strong> ({b.shipments.length} Docs)
-                <br /> Driver: {b.drivername || "-"}
-              </li>
-            ))}
-          </ul>
+          <p>Terima <b>{selectedBundles.length} Bundle</b> terpilih?</p>
         </div>
       ),
       onConfirm: async () => {
@@ -159,6 +190,7 @@ const DPKFromDriverMobile = () => {
           if (res.data.success) {
             Toast.show({ content: "Berhasil Diterima!", icon: "success" });
             fetchData();
+            setSearchText(""); // Reset search setelah submit
           } else {
             Toast.show({ content: res.data.message || "Gagal", icon: "fail" });
           }
@@ -183,21 +215,9 @@ const DPKFromDriverMobile = () => {
               />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: "bold" }}>{bundle.bundleNo}</div>
+              <div style={{ fontWeight: "600", fontSize: 15 }}>{bundle.bundleNo}</div>
               <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
-                {bundle.drivername ? (
-                  <>
-                    <UserOutline /> {bundle.drivername} •{" "}
-                  </>
-                ) : (
-                  ""
-                )}
-                {bundle.shipments.length} Docs
-              </div>
-              <div style={{ fontSize: 11, color: "#999" }}>
-                {dayjs(bundle.created)
-                  .add(7, "hours")
-                  .format("DD-MM-YYYY HH:mm")}
+                 {bundle.drivername || "Tanpa Driver"} • {bundle.shipments.length} Docs
               </div>
             </div>
           </div>
@@ -205,32 +225,44 @@ const DPKFromDriverMobile = () => {
       >
         <div style={{ background: "#f5f5f5", borderRadius: 8, padding: 8 }}>
           {bundle.shipments.map((item) => (
-            <Card key={item.key} style={{ marginBottom: 8, borderRadius: 6 }}>
+            <Card key={item.key} style={{ marginBottom: 8, borderRadius: 8, borderLeft: '4px solid #1677ff' }}>
               <div
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "flex-start",
+                  gap: 8
                 }}
               >
-                <div>
-                  <div style={{ fontWeight: "bold" }}>{item.documentno}</div>
-                  <div style={{ fontSize: 13, color: "#666" }}>
+                <div style={{ flex: 1 }}>
+                  {/* UX IMPORVEMENT: Document No Lebih Menonjol */}
+                  <div style={{ 
+                    fontSize: 18, 
+                    fontWeight: "800", 
+                    color: "#1677ff", 
+                    marginBottom: 4,
+                    fontFamily: 'monospace' // Opsional: agar terlihat seperti kode
+                  }}>
+                    {item.documentno}
+                  </div>
+                  
+                  <div style={{ fontSize: 14, fontWeight: '500', color: "#333", marginBottom: 4 }}>
                     {item.customer}
                   </div>
-                  <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
-                    <CalendarOutline style={{ marginRight: 4 }} />
-                    {item.plantime
-                      ? dayjs(item.plantime).format("DD-MM-YYYY")
-                      : "-"}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: "#888" }}>
+                    <CalendarOutline />
+                    {item.plantime ? dayjs(item.plantime).format("DD MMM YYYY") : "-"}
                   </div>
                 </div>
-                <div>
-                  <Button
+
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                   <Button
                     size="mini"
                     color="danger"
-                    fill="outline"
+                    fill="none"
                     onClick={() => handleRejectItem(item)}
+                    style={{ paddingRight: 0 }}
                   >
                     Reject
                   </Button>
@@ -247,26 +279,48 @@ const DPKFromDriverMobile = () => {
 
   return (
     <LayoutGlobalMobile title="Receipt from Driver">
+      
+      {/* 1. STICKY SEARCH BAR */}
+      <div style={{ 
+        position: 'sticky', 
+        top: 0, 
+        zIndex: 99, 
+        background: '#fff', 
+        padding: '12px 12px 8px 12px',
+        borderBottom: '1px solid #eee'
+      }}>
+        <SearchBar 
+          placeholder="Cari No Dokumen / Bundle..." 
+          value={searchText}
+          onChange={setSearchText}
+          onClear={() => setSearchText("")}
+          style={{ '--border-radius': '8px', '--background': '#f0f0f0' }}
+        />
+      </div>
+
       <PullToRefresh onRefresh={fetchData}>
-        <div style={{ padding: 12, paddingBottom: 80 }}>
+        <div style={{ padding: 12, paddingBottom: 80, minHeight: '80vh' }}>
           {loading && (
-            <AutoCenter>
+            <AutoCenter style={{ padding: 20 }}>
               <SpinLoading color="primary" />
             </AutoCenter>
           )}
 
-          {!loading && dataList.length === 0 && (
-            <AutoCenter style={{ marginTop: 20 }}>
-              Tidak ada data bundle.
+          {!loading && filteredData.length === 0 && (
+            <AutoCenter style={{ marginTop: 40, flexDirection: 'column', gap: 10 }}>
+              <FileOutline fontSize={48} color="#ccc" />
+              <div style={{ color: "#999" }}>
+                {searchText ? `Dokumen "${searchText}" tidak ditemukan` : "Tidak ada data bundle."}
+              </div>
             </AutoCenter>
           )}
 
           <Collapse
             activeKey={activeKey}
             onChange={setActiveKey}
-            accordion={false}
+            accordion={false} // Biarkan banyak terbuka sekaligus
           >
-            {dataList.map((bundle) => renderBundle(bundle))}
+            {filteredData.map((bundle) => renderBundle(bundle))}
           </Collapse>
         </div>
       </PullToRefresh>
@@ -276,7 +330,7 @@ const DPKFromDriverMobile = () => {
         <div
           style={{
             position: "fixed",
-            bottom: 70,
+            bottom: 55, // Sedikit dinaikkan agar tidak tertutup navigation bar HP
             left: 12,
             right: 12,
             zIndex: 100,
@@ -287,7 +341,11 @@ const DPKFromDriverMobile = () => {
             color="primary"
             size="large"
             onClick={handleSubmit}
-            style={{ boxShadow: "0 4px 12px rgba(22, 119, 255, 0.4)" }}
+            style={{ 
+              boxShadow: "0 4px 20px rgba(22, 119, 255, 0.5)", 
+              fontWeight: 'bold',
+              borderRadius: 12
+            }}
           >
             Accept ({selectedCount} Bundle)
           </Button>

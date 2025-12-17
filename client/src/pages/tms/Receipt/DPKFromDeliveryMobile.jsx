@@ -203,6 +203,8 @@ const DPKFromDeliveryMobile = () => {
 
     Dialog.confirm({
       title: "Konfirmasi Penerimaan",
+      confirmText: "Submit",
+      cancelText: "Batal",
       content: (
         <div style={{ maxHeight: "40vh", overflowY: "auto" }}>
           <p>Terima {selectedBundles.length} Bundle terpilih?</p>

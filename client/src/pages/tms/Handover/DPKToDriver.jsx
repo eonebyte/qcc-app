@@ -326,7 +326,7 @@ export default function DPKToDriver() {
 
       const json = await resp.json();
 
-      if (json.data.insertedCount <= 0) {
+      if (json.data.updatedCount <= 0) {
         message.error("Submit gagal.");
         return;
       }

@@ -165,7 +165,7 @@ export default function DPKToDriverMobile() {
       });
       const json = await resp.json();
 
-      if (json.data && json.data.insertedCount > 0) {
+      if (json.data && json.data.updatedCount > 0) {
         Toast.show({ content: "Handover Berhasil!", icon: "success" });
         setIsConfirmOpen(false);
         setSelectedKeys([]);

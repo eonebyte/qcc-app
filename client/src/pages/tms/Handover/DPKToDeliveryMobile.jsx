@@ -129,8 +129,10 @@ export default function DPKToDeliveryMobile() {
                         credentials: "include"
                     });
                     const json = await resp.json();
+                    
+                    console.log('json :', json);
 
-                    if (json.data && json.data.insertedCount > 0) {
+                    if (json.data && json.data.updatedCount > 0) {
                         Toast.show({ content: "Handover Berhasil!", icon: "success" });
                         setSelectedKeys([]);
                         fetchData();

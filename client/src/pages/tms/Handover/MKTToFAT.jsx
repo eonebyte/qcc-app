@@ -357,7 +357,7 @@ export default function MKTToFAT() {
 
       const json = await resp.json();
 
-      if (json.data && json.data.insertedCount <= 0) {
+      if (json.data && json.data.updatedCount <= 0) {
         message.error("Submit gagal atau tidak ada data berubah.");
         return;
       }
