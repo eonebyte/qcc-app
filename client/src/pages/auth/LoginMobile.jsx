@@ -66,6 +66,7 @@ export default function LoginMobile() {
           setHasDeviceId(false);
         }
       } catch (error) {
+        console.log(error)
         setHasDeviceId(false);
       } finally {
         setCheckingDevice(false);
@@ -121,6 +122,7 @@ export default function LoginMobile() {
               }
           }
       } catch (error) {
+        console.log(error)
           Toast.show({ icon: 'fail', content: 'Gagal menyimpan PIN' });
           setNewPin("");
       }
@@ -154,7 +156,7 @@ export default function LoginMobile() {
     if (role === "driver") {
       navigate("/handover/checkin/customer");
     } else {
-      navigate("/history");
+      navigate("/progress-shipment");
     }
   };
 

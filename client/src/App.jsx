@@ -4,7 +4,7 @@ import { checkAuthStatus } from "./states/reducers/authSlice";
 import Login from "./pages/auth/Login";
 import { Spin } from "antd";
 import SupplyRawMaterial from "./pages/sales/SupplyRawMaterial";
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, Navigate } from "react-router-dom";
 import Receipt from "./pages/tms/Receipt";
 import ProgressShipment from "./pages/tms/ProgressShipment";
 import ListHandover from "./pages/tms/ListHandover";
@@ -54,7 +54,8 @@ function App() {
   return (
     <Routes>
       <Route path="/setting/config" element={<SettingConfig />} />
-      <Route path="/" element={<Home />} />
+      {/* <Route path="/" element={<Home />} />*/}
+      <Route path="/" element={<Navigate to="/progress-shipment" replace />} />
       <Route path="/outstanding" element={<Outstanding />} />
       <Route path="/list/handover" element={<ListHandover />} />
       <Route path="/receipt" element={<Receipt />} />
