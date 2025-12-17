@@ -8,7 +8,7 @@ import {
   Toast,
   AutoCenter,
   PullToRefresh,
-  SpinLoading
+  SpinLoading,
 } from "antd-mobile";
 import { CalendarOutline, UserOutline, FileOutline } from "antd-mobile-icons";
 import dayjs from "dayjs";
@@ -134,6 +134,8 @@ const DriverFromDPKMobile = () => {
 
     Dialog.confirm({
       title: "Konfirmasi Penerimaan",
+      confirmText: "Terima",
+      cancelText: "Batal",
       content: (
         <div style={{ maxHeight: "40vh", overflowY: "auto" }}>
           <p>Terima {selectedBundles.length} Bundle terpilih?</p>
@@ -153,8 +155,6 @@ const DriverFromDPKMobile = () => {
           </ul>
         </div>
       ),
-      confirmText: "Submit",
-      cancelText: "Batal",
       onConfirm: async () => {
         try {
           const payload = { data: selectedBundles };
@@ -252,9 +252,11 @@ const DriverFromDPKMobile = () => {
     <LayoutGlobalMobile title="Receipt from DPK">
       <PullToRefresh onRefresh={fetchData}>
         <div style={{ padding: 12, paddingBottom: 80 }}>
-          {loading && <AutoCenter>
-            <SpinLoading color="primary" />
-          </AutoCenter>}
+          {loading && (
+            <AutoCenter>
+              <SpinLoading color="primary" />
+            </AutoCenter>
+          )}
 
           {!loading && dataList.length === 0 && (
             <AutoCenter style={{ marginTop: 20 }}>

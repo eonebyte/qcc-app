@@ -105,6 +105,8 @@ export default function DeliveryToMKTMobile() {
     Dialog.confirm({
       title: "Konfirmasi Cancel",
       content: `Apakah Anda yakin akan confirm cancel dokumen ${item.documentno}?`,
+      confirmText: "Submit",
+      cancelText: "Batal",
       onConfirm: async () => {
         try {
           const res = await axios.post(`${backEndUrl}/tms/cancel/mkt`, item, {

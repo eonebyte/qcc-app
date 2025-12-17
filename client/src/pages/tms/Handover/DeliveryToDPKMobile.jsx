@@ -117,6 +117,8 @@ export default function DeliveryToDPKMobile() {
     Dialog.confirm({
       title: "Konfirmasi Cancel",
       content: `Apakah Anda yakin akan confirm cancel dokumen ${item.documentno}?`,
+      confirmText: "Submit",
+      cancelText: "Batal",
       onConfirm: async () => {
         try {
           const res = await axios.post(`${backEndUrl}/tms/cancel`, item, {
@@ -175,6 +177,8 @@ export default function DeliveryToDPKMobile() {
     Dialog.confirm({
       title: "Submit Handover",
       content: `Kirim handover untuk ${selectedItems.length} dokumen terpilih?`,
+      confirmText: "Submit",
+      cancelText: "Batal",
       onConfirm: async () => {
         try {
           const payload = { data: selectedItems };

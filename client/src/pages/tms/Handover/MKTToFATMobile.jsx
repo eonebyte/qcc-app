@@ -154,6 +154,8 @@ const MKTToFATMobile = () => {
 
     Dialog.confirm({
       title: "Konfirmasi Handover",
+      confirmText: "Submit",
+      cancelText: "Batal",
       content: (
         <div style={{ maxHeight: "40vh", overflowY: "auto" }}>
           <p>

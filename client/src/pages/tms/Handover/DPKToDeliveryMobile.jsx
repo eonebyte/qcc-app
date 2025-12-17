@@ -112,6 +112,8 @@ export default function DPKToDeliveryMobile() {
         Dialog.confirm({
             title: 'Konfirmasi Handover',
             content: `Kirim handover untuk ${selectedItems.length} dokumen terpilih?`,
+            confirmText: "Submit",
+            cancelText: "Batal",
             onConfirm: async () => {
                 try {
                     const payload = {

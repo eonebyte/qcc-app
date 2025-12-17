@@ -169,6 +169,8 @@ const FATFromMKTMobile = () => {
 
         Dialog.confirm({
             title: 'Konfirmasi Penerimaan',
+            confirmText: "Terima",
+            cancelText: "Batal",
             content: (
                 <div style={{ maxHeight: '40vh', overflowY: 'auto' }}>
                     <p>Terima {selectedBundles.length} Bundle terpilih?</p>
