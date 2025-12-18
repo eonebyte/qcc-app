@@ -20,6 +20,7 @@ const DB_HOST_POSTGRES = process.env.DB_HOST_POSTGRES;
 const originList = ISPROD == 'Y'
     ? [
         "https://api-node.adyawinsa.com/3200",
+        "https://api-tms.adyawinsa.com",
         "https://erp.adyawinsa.com",
         "https://app.adyawinsa.com"
     ]
