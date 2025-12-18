@@ -42,16 +42,7 @@ const { Title, Text } = Typography;
 const formatDateTime = (isoString) => {
   if (!isoString) return null;
   try {
-    const date = new Date(isoString);
-
-    const day = String(date.getDate()).padStart(2, "0");
-    const month = String(date.getMonth() + 1).padStart(2, "0"); // bulan mulai dari 0
-    const year = date.getFullYear();
-
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-
-    return `${day}-${month}-${year} ${hours}:${minutes}`;
+    return dayjs(isoString).add(7, "hour").format("DD-MM-YYYY HH:mm");
   } catch (error) {
     console.error("Invalid date format:", error);
     return null;
@@ -61,12 +52,7 @@ const formatDateTime = (isoString) => {
 const formatTime = (isoString) => {
   if (!isoString) return "-";
   try {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString("id-ID", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+    return dayjs(isoString).add(7, "hour").format("HH:mm");
   } catch (error) {
     console.error("Invalid date format:", error);
     return "-";
@@ -360,6 +346,8 @@ const ProgressShipment = () => {
       if (!Array.isArray(payload)) payload = [];
 
       const transformed = transformApiData(payload, current, pageSize);
+
+      console.log("transformed : ", transformed);
 
       setShipmentData(transformed);
 
