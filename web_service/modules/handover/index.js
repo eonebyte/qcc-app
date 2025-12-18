@@ -229,7 +229,7 @@ class Handover {
                     INNER JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
                 WHERE
                     mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
-                    AND mi.DOCSTATUS = 'CO' AND ISSOTRX = 'Y'
+                    AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP') AND ISSOTRX = 'Y'
                     AND cb.ISSUBCONTRACT = 'N'
                     AND co.ISMILKRUN = 'N'
                     ORDER BY mi.DOCUMENTNO DESC

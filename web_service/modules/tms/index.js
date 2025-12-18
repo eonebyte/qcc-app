@@ -1092,7 +1092,7 @@ class TMS {
                             INNER JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
                         WHERE
                         		mi.MOVEMENTDATE >= TRUNC(ADD_MONTHS(SYSDATE, -1), 'MM') + 20
-                                AND mi.DOCSTATUS = 'CO' AND ISSOTRX = 'Y'
+                                AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP') AND ISSOTRX = 'Y'
                                 AND cb.ISSUBCONTRACT = 'N'
                                 AND co.ISMILKRUN = 'N'
                                 AND mi.ADW_TMS_ID IS NULL
@@ -1265,7 +1265,7 @@ class TMS {
                             INNER JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
                         WHERE
                         		mi.MOVEMENTDATE >= TRUNC(ADD_MONTHS(SYSDATE, -1), 'MM') + 20
-                                AND mi.DOCSTATUS = 'CO' AND ISSOTRX = 'Y'
+                                AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP') AND ISSOTRX = 'Y'
                                 AND cb.ISSUBCONTRACT = 'N'
                                 AND co.ISMILKRUN = 'N'
                                 AND mi.ADW_TMS_ID IS NULL
@@ -2324,7 +2324,7 @@ class TMS {
             JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
             JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
             WHERE
-                mi.DOCSTATUS = 'CO'
+                mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                 AND mi.ISSOTRX = 'Y'
                 -- Filter rentang waktu yang jelas di Oracle
                 AND mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
@@ -2349,7 +2349,7 @@ class TMS {
       const totalResult = await connection.execute(`
                 SELECT COUNT(*) AS TOTAL
                 FROM M_InOut
-                WHERE DOCSTATUS = 'CO'
+                WHERE DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                 AND ISSOTRX = 'Y'
                 -- AND MOVEMENTDATE >= ADD_MONTHS(SYSDATE, -1)
             `);
@@ -2664,7 +2664,7 @@ class TMS {
             JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
             JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
             WHERE
-                mi.DOCSTATUS = 'CO'
+                mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                 AND mi.ISSOTRX = 'Y'
                 -- Filter rentang waktu yang jelas di Oracle
                 AND mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
@@ -2698,7 +2698,7 @@ class TMS {
                 FROM M_InOut mi
                 JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
                 JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
-                WHERE mi.DOCSTATUS = 'CO'
+                WHERE mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                 AND mi.ISSOTRX = 'Y'
                 AND mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
                 AND mi.MOVEMENTDATE < TO_DATE(:endDate, 'YYYY-MM-DD') + 1
@@ -3024,7 +3024,7 @@ class TMS {
                 JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
                 JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
                 WHERE
-                    mi.DOCSTATUS = 'CO'
+                    mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                     AND mi.ISSOTRX = 'Y'
                     AND mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
                     AND mi.MOVEMENTDATE < TO_DATE(:endDate, 'YYYY-MM-DD') + 1
@@ -3634,7 +3634,7 @@ class TMS {
                             -- mi2.MOVEMENTDATE >= TRUNC(ADD_MONTHS(SYSDATE, -1), 'MM') + 20
                             mi2.MOVEMENTDATE >= TO_DATE(:month, 'YYYYMM') -- Gunakan parameter :month
                             AND mi2.MOVEMENTDATE <= LAST_DAY(TO_DATE(:month, 'YYYYMM')) -- Gunakan parameter :month
-                            AND mi2.DOCSTATUS = 'CO'
+                            AND mi2.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                             AND mi2.ISSOTRX = 'Y'
                     ) AS TOTAL_COUNT
                 FROM DUAL
@@ -3708,7 +3708,7 @@ class TMS {
                             -- mi2.MOVEMENTDATE >= TRUNC(ADD_MONTHS(SYSDATE, -1), 'MM') + 20
                             mi2.MOVEMENTDATE >= TO_DATE(:month, 'YYYYMM')
                             AND mi2.MOVEMENTDATE <= LAST_DAY(TO_DATE(:month, 'YYYYMM'))
-                            AND mi2.DOCSTATUS = 'CO'
+                            AND mi2.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                             AND mi2.ISSOTRX = 'Y'
                     ) AS TOTAL_COUNT
                 FROM DUAL
@@ -3837,7 +3837,7 @@ class TMS {
                             -- mi2.MOVEMENTDATE >= TRUNC(ADD_MONTHS(SYSDATE, -1), 'MM') + 20
                             mi2.MOVEMENTDATE >= TO_DATE(:month, 'YYYYMM') -- Gunakan parameter :month
                             AND mi2.MOVEMENTDATE <= LAST_DAY(TO_DATE(:month, 'YYYYMM')) -- Gunakan parameter :month
-                            AND mi2.DOCSTATUS = 'CO'
+                            AND mi2.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                             AND mi2.ISSOTRX = 'Y'
                     ) AS TOTAL_COUNT
                 FROM DUAL
@@ -3932,7 +3932,7 @@ class TMS {
                                     WHERE
                                         -- mi2.MOVEMENTDATE >= TRUNC(ADD_MONTHS(SYSDATE, -1), 'MM') + 20
                                         TO_CHAR(mi2.MOVEMENTDATE, 'YYYYMM') = :month
-                                        AND mi2.DOCSTATUS = 'CO'
+                                        AND mi2.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                                         AND mi2.ISSOTRX = 'Y'
                                 ) AS TOTAL_COUNT
                             FROM DUAL
@@ -4002,7 +4002,7 @@ class TMS {
                                     WHERE
                                         -- mi2.MOVEMENTDATE >= TRUNC(ADD_MONTHS(SYSDATE, -1), 'MM') + 20
                                         TRUNC(mi2.MOVEMENTDATE) = TRUNC(SYSDATE)
-                                        AND mi2.DOCSTATUS = 'CO'
+                                        AND mi2.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                                         AND mi2.ISSOTRX = 'Y'
                                 ) AS TOTAL_COUNT
                             FROM DUAL
@@ -4264,7 +4264,7 @@ class TMS {
   //             WHERE
   //                 mi.MOVEMENTDATE >= TO_DATE('202510', 'YYYYMM')
   //                 AND mi.MOVEMENTDATE <= LAST_DAY(TO_DATE('202510', 'YYYYMM'))
-  //                 AND mi.DOCSTATUS = 'CO'
+  //                 AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
   //                 AND mi.ISSOTRX = 'Y'
   //                 AND mi.M_INOUT_ID IN (${placeholders})
   //             `;
@@ -4291,7 +4291,7 @@ class TMS {
   //             WHERE
   //                 mi.MOVEMENTDATE >= TO_DATE('202510', 'YYYYMM')
   //                 AND mi.MOVEMENTDATE <= LAST_DAY(TO_DATE('202510', 'YYYYMM'))
-  //                 AND mi.DOCSTATUS = 'CO'
+  //                 AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
   //                 AND mi.ISSOTRX = 'Y'
   //                 AND mi.M_INOUT_ID NOT IN (${placeholders})
   //         `;
@@ -4409,7 +4409,7 @@ class TMS {
                 WHERE
                     mi.M_INOUT_ID IN (${ids.join(",")})
                     AND mi.MOVEMENTDATE BETWEEN TO_DATE('202510', 'YYYYMM') AND LAST_DAY(TO_DATE('202510', 'YYYYMM'))
-                    AND mi.DOCSTATUS = 'CO'
+                    AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                     AND mi.ISSOTRX = 'Y'
             `,
         );
@@ -4429,7 +4429,7 @@ class TMS {
             WHERE
                 mi.M_INOUT_ID NOT IN (${allIds.length ? allIds.join(",") : "0"})
                 AND mi.MOVEMENTDATE BETWEEN TO_DATE('202510', 'YYYYMM') AND LAST_DAY(TO_DATE('202510', 'YYYYMM'))
-                AND mi.DOCSTATUS = 'CO'
+                AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                 AND mi.ISSOTRX = 'Y'
                 AND co.ISMILKRUN = 'N'
                 AND cb.ISSUBCONTRACT = 'N'
@@ -4449,7 +4449,7 @@ class TMS {
             WHERE
                 mi.M_INOUT_ID NOT IN (${allIds.length ? allIds.join(",") : "0"})
                 AND mi.MOVEMENTDATE BETWEEN TO_DATE('202510', 'YYYYMM') AND LAST_DAY(TO_DATE('202510', 'YYYYMM'))
-                AND mi.DOCSTATUS = 'CO'
+                AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                 AND mi.ISSOTRX = 'Y'
                 AND co.ISMILKRUN = 'Y'
                 AND cb.ISSUBCONTRACT = 'Y'
