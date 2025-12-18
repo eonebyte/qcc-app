@@ -129,9 +129,9 @@ export default function LayoutGlobalMobile({
       actions.push({
         type: 'receipt',
         key: "/receipt/driver/from/dpk",
-        text: "From DPK",
+        text: "Terima dari DPK",
         icon: <LoginOutlined />,
-        description: "Terima dari DPK",
+        // description: "Terima dari DPK",
       });
     }
     if (userRole === "marketing") {
@@ -204,16 +204,16 @@ export default function LayoutGlobalMobile({
         {
           type: 'handover',
           key: "/handover/checkin/customer",
-          text: "Check Out",
+          text: "Penyerahan ke Customer",
           icon: <SendOutlined />,
-          description: "Penyerahan ke Customer",
+          // description: "Penyerahan ke Customer",
         },
         {
           type: 'handover',
           key: "/handover/checkout/droponly",
-          text: "Pick Up",
+          text: "Pengambilan SJ dari Customer",
           icon: <DownCircleOutlined />,
-          description: "Pengambilan SJ Drop Only",
+          // description: "Pengambilan SJ Drop Only",
         },
       );
     }

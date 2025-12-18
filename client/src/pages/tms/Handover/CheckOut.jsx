@@ -543,7 +543,7 @@ export default function CheckOut() {
                         onClick={openHandoverModal}
                         icon={<SendOutlined />}
                     >
-                        Check Out
+                      Penyerahan
                     </Button>
                 </div>
 

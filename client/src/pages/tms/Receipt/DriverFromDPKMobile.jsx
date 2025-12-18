@@ -292,7 +292,7 @@ const DriverFromDPKMobile = () => {
             onClick={handleSubmit}
             style={{ boxShadow: "0 4px 12px rgba(22, 119, 255, 0.4)" }}
           >
-            Accept ({selectedCount} Bundle)
+            Terima ({selectedCount} Bundle)
           </Button>
         </div>
       )}

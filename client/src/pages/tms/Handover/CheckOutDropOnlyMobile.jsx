@@ -214,7 +214,7 @@ export default function CheckOutDropOnlyMobile() {
                     disabled={selectedRows.length === 0}
                     onClick={openReceiptPopup}
                 >
-                    Proses Receipt ({selectedRows.length})
+                    Pengambilan ({selectedRows.length})
                 </Button>
             </div>
 

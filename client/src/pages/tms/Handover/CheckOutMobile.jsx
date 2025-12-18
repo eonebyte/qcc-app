@@ -251,7 +251,7 @@ export default function CheckOutMobile() {
                     disabled={selectedRows.length === 0}
                     onClick={openHandoverPopup}
                 >
-                    Process Check Out ({selectedRows.length})
+                    Penyerahan ({selectedRows.length})
                 </Button>
             </div>
 
