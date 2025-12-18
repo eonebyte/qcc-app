@@ -69,7 +69,7 @@ class Handover {
                 WHERE
                     mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
                     AND mi.MOVEMENTDATE < TO_DATE(:endDate, 'YYYY-MM-DD') + 1
-                    AND mi.DOCSTATUS = 'CO'
+                    AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                     AND ISSOTRX = 'Y'
                     AND cb.ISSUBCONTRACT = 'N'
                     AND co.ISMILKRUN = 'N'
