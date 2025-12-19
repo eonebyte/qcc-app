@@ -1,23 +1,38 @@
-import { useEffect, useState } from "react";
-import { CloseOutlined } from "@ant-design/icons";
-import { Button, Checkbox, Modal, Table, Typography, notification } from "antd";
+import { useEffect, useState, useMemo } from "react";
+import { CheckOutlined, CloseOutlined, SearchOutlined, CalendarOutlined } from "@ant-design/icons";
+import {
+  Button,
+  Checkbox,
+  Modal,
+  Popover,
+  Table,
+  Typography,
+  notification,
+  Input,
+  Space,
+  DatePicker,
+  Tag,
+} from "antd";
 import axios from "axios";
 import { DateTime } from "luxon";
+import dayjs from "dayjs";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
 import useIsMobile from "../../../hooks/useIsMobile";
 import DPKFromDriverMobile from "./DPKFromDriverMobile";
-// import { useSelector } from 'react-redux';
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 const DPKFromDriver = () => {
   const isMobile = useIsMobile();
-  // const user = useSelector((state) => state.auth.user);
-  // const userId = user.ad_user_id;
 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+  
+  // States untuk Filter
+  const [searchText, setSearchText] = useState("");
+  const [filterDate, setFilterDate] = useState(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [selectedBundlesForSubmit, setSelectedBundlesForSubmit] = useState([]);
@@ -43,14 +58,11 @@ const DPKFromDriver = () => {
             const processedShipments = bundle.shipments.map((shipment) => ({
               ...shipment,
               key: shipment.m_inout_id,
+              checked: false, 
+              clickCount: 0,  
+              bundleNo: bundle.bundleNo,
               arrived: false,
             }));
-            // .filter(shipment => {
-            //     if (Number(shipment.checkpoin_id) === 4) {
-            //         return shipment.driverby === userId;
-            //     }
-            //     return true;
-            // });
 
             return {
               ...bundle,
@@ -79,6 +91,81 @@ const DPKFromDriver = () => {
     }
   };
 
+  // --- LOGIC FILTERING (SEARCH + DATE) ---
+  const filteredData = useMemo(() => {
+    const lowerSearch = searchText.toLowerCase();
+
+    return data
+      .map((bundle) => {
+        // Filter Shipment di dalam bundle berdasarkan teks DAN tanggal
+        const matchingShipments = bundle.shipments.filter((s) => {
+          const matchesText = !searchText || (
+            s.documentno.toLowerCase().includes(lowerSearch) ||
+            s.customer.toLowerCase().includes(lowerSearch)
+          );
+
+          const matchesDate = !filterDate || 
+            dayjs(s.plantime).isSame(filterDate, 'day');
+
+          return matchesText && matchesDate;
+        });
+
+        // Cek apakah metadata bundle cocok (hanya jika filter tanggal kosong)
+        const isBundleMatch = !filterDate && (
+          bundle.bundleNo.toLowerCase().includes(lowerSearch) ||
+          (bundle.drivername && bundle.drivername.toLowerCase().includes(lowerSearch))
+        );
+
+        if (isBundleMatch) return bundle;
+        if (matchingShipments.length > 0) {
+          return { ...bundle, shipments: matchingShipments };
+        }
+        return null;
+      })
+      .filter((b) => b !== null);
+  }, [data, searchText, filterDate]);
+
+  // --- HANDLERS ---
+  const handleShipmentCheckChange = (bundleNo, shipmentKey, checked) => {
+    setData((prevData) =>
+      prevData.map((bundle) => {
+        if (bundle.bundleNo === bundleNo) {
+          const updatedShipments = bundle.shipments.map((shipment) => {
+            if (shipment.key === shipmentKey) {
+              return { ...shipment, checked };
+            }
+            return shipment;
+          });
+          return { ...bundle, shipments: updatedShipments };
+        }
+        return bundle;
+      }),
+    );
+  };
+
+  const handleShipmentClickCount = (bundleNo, shipmentKey) => {
+    setData((prevData) =>
+      prevData.map((bundle) => {
+        if (bundle.bundleNo === bundleNo) {
+          const updatedShipments = bundle.shipments.map((shipment) => {
+            if (shipment.key === shipmentKey) {
+              let newClickCount = shipment.clickCount + 1;
+              let newChecked = shipment.checked;
+              if (newClickCount >= 3) {
+                newChecked = false;
+                newClickCount = 0;
+              }
+              return { ...shipment, checked: newChecked, clickCount: newClickCount };
+            }
+            return shipment;
+          });
+          return { ...bundle, shipments: updatedShipments };
+        }
+        return bundle;
+      }),
+    );
+  };
+
   const handleBundleSelectionChange = (bundleNo, checked) => {
     setData((prevData) =>
       prevData.map((bundle) => {
@@ -94,13 +181,12 @@ const DPKFromDriver = () => {
     );
   };
 
-  const bundleCountSelected = data.filter(
+  const bundleCountSelected = filteredData.filter(
     (b) => b.shipments.length > 0 && b.shipments.every((s) => s.arrived),
   ).length;
 
   const handleOpenConfirmModal = () => {
-    // Filter untuk mendapatkan bundle yang SEMUA shipment-nya ditandai 'arrived'
-    const selectedBundles = data.filter(
+    const selectedBundles = filteredData.filter(
       (bundle) =>
         bundle.shipments.length > 0 &&
         bundle.shipments.every((shipment) => shipment.arrived),
@@ -118,42 +204,30 @@ const DPKFromDriver = () => {
   };
 
   const executeSubmit = async () => {
-    if (selectedBundlesForSubmit.length === 0) return;
-
     setIsSubmitting(true);
     try {
-      const payload = { data: selectedBundlesForSubmit };
-
-      console.log("New Payload:", payload);
+      const payloadData = selectedBundlesForSubmit.map((bundle) => ({
+        ...bundle,
+        shipments: bundle.shipments.filter((s) => s.checked),
+      })).filter(bundle => bundle.shipments.length > 0);
 
       const res = await axios.post(
         `${backEndUrl}/receipt/process/dpk/from/driver`,
-        payload,
+        { data: payloadData },
         { withCredentials: true },
       );
 
       if (res.data.success) {
-        notification.success({
-          message: "Sukses",
-          description: "Data berhasil diterima.",
-        });
+        notification.success({ message: "Sukses", description: "Data berhasil diterima." });
         fetchData();
-      } else {
-        notification.error({
-          message: "Gagal",
-          description: res.data.message || "Terjadi kesalahan.",
-        });
+        setSearchText("");
+        setFilterDate(null);
       }
     } catch (error) {
-      console.error("Submit error:", error);
-      notification.error({
-        message: "Accept Gagal",
-        description: error.response?.data?.message || "Silakan coba lagi.",
-      });
+      notification.error({ message: "Gagal", description: "Terjadi kesalahan." });
     } finally {
       setIsSubmitting(false);
       setIsConfirmModalOpen(false);
-      setSelectedBundlesForSubmit([]);
     }
   };
 
@@ -163,69 +237,64 @@ const DPKFromDriver = () => {
   };
 
   const handleRejectOk = async () => {
-    console.log("Rejecting item:", itemToReject);
     try {
-      const res = await axios.post(`${backEndUrl}/tms/reject`, itemToReject, {
-        withCredentials: true,
-      });
-
+      const res = await axios.post(`${backEndUrl}/tms/reject`, itemToReject, { withCredentials: true });
       if (res.data.success) {
-        notification.success({
-          message: "Info",
-          description: `Dokumen ${itemToReject.documentno} akan diproses untuk direject.`,
-        });
+        notification.success({ message: "Info", description: `Dokumen direject.` });
         fetchData();
-      } else {
-        notification.error({
-          message: "Gagal",
-          description: res.data.message || "Terjadi kesalahan.",
-        });
       }
-    } catch (error) {
-      console.error("Submit error:", error);
-      notification.error({
-        message: "Reject Gagal",
-        description: error.response?.data?.message || "Silakan coba lagi.",
-      });
+    } catch (err) {
+      notification.error({ message: "Reject Gagal" });
     } finally {
       setIsModalRejectOpen(false);
       setItemToReject(null);
     }
   };
 
-  const handleRejectCancel = () => {
-    setIsModalRejectOpen(false);
-    setItemToReject(null);
-  };
-
-  const shipmentColumns = () => {
-    return [
-      { title: "Document No", dataIndex: "documentno", key: "documentno" },
-      { title: "Customer", dataIndex: "customer", key: "customer" },
-      {
-        title: "Plan Time",
-        dataIndex: "plantime",
-        key: "plantime",
-        render: (text) =>
-          text ? DateTime.fromISO(text).toFormat("dd-MM-yyyy HH:mm") : "N/A",
-      },
-      {
-        title: "Action",
-        key: "action",
-        width: 100,
-        render: (_, record) => (
-          <Button
-            onClick={() => showModalReject(record)}
-            icon={<CloseOutlined />}
-            size="small"
-            danger
+  // --- COLUMNS ---
+  const shipmentColumns = () => [
+    {
+      title: (
+        <Popover content="Klik 'Checked' 3x untuk uncheck">
+          <span style={{ cursor: "pointer" }}>Check</span>
+        </Popover>
+      ),
+      key: "check_action",
+      width: 100,
+      render: (_, record) => (
+        record.checked ? (
+          <span
+            style={{ color: "#389e0d", cursor: "pointer", fontWeight: 'bold' }}
+            onClick={() => handleShipmentClickCount(record.bundleNo, record.key)}
           >
-            Reject
-          </Button>
-        ),
-      },
-    ];
-  };
+            Checked
+          </span>
+        ) : (
+          <Button
+            onClick={() => handleShipmentCheckChange(record.bundleNo, record.key, true)}
+            icon={<CheckOutlined />}
+            size="small"
+          />
+        )
+      ),
+    },
+    { title: "Document No", dataIndex: "documentno", key: "documentno", render: (text) => <b>{text}</b> },
+    { title: "Customer", dataIndex: "customer", key: "customer" },
+    {
+      title: "Plan Time",
+      dataIndex: "plantime",
+      key: "plantime",
+      render: (text) => text ? DateTime.fromISO(text).toFormat("dd-MM-yyyy HH:mm") : "N/A",
+    },
+    {
+      title: "Action",
+      key: "action",
+      width: 100,
+      render: (_, record) => (
+        <Button onClick={() => showModalReject(record)} icon={<CloseOutlined />} size="small" danger>Reject</Button>
+      ),
+    },
+  ];
 
   const mainColumns = [
     {
@@ -234,15 +303,13 @@ const DPKFromDriver = () => {
       width: 50,
       align: "center",
       render: (_, record) => {
-        const isSelected =
-          record.shipments.length > 0 &&
-          record.shipments.every((s) => s.arrived);
+        const allChecked = record.shipments.length > 0 && record.shipments.every((s) => s.checked);
+        const isSelected = record.shipments.length > 0 && record.shipments.every((s) => s.arrived);
         return (
           <Checkbox
             checked={isSelected}
-            onChange={(e) =>
-              handleBundleSelectionChange(record.bundleNo, e.target.checked)
-            }
+            onChange={(e) => handleBundleSelectionChange(record.bundleNo, e.target.checked)}
+            disabled={!allChecked}
           />
         );
       },
@@ -252,8 +319,7 @@ const DPKFromDriver = () => {
       key: "no",
       width: 70,
       align: "center",
-      render: (_, __, index) =>
-        (pagination.current - 1) * pagination.pageSize + index + 1,
+      render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
     },
     { title: "Bundle No", dataIndex: "bundleNo", key: "bundleNo" },
     { title: "Driver", dataIndex: "drivername", key: "drivername" },
@@ -261,119 +327,99 @@ const DPKFromDriver = () => {
       title: "Date Handover",
       dataIndex: "created",
       key: "created",
-      render: (text) =>
-        DateTime.fromISO(text)
-          .plus({ hours: 7 })
-          .toFormat("dd-MM-yyyy HH:mm:ss"),
+      render: (text) => text ? DateTime.fromISO(text).plus({ hours: 7 }).toFormat("dd-MM-yyyy HH:mm") : "N/A",
     },
     {
       title: "Total Shipments",
       dataIndex: "shipments",
       key: "shipments_count",
       align: "center",
-      render: (shipments) => shipments.length,
+      render: (shipments) => <Tag color="blue">{shipments.length} Docs</Tag>,
     },
   ];
-
-  const totalShipmentsInSelectedBundles = selectedBundlesForSubmit.reduce(
-    (acc, bundle) => acc + bundle.shipments.length,
-    0,
-  );
 
   return isMobile ? (
     <DPKFromDriverMobile />
   ) : (
     <LayoutGlobal>
+      {/* FILTER SECTION */}
+      <div style={{ marginBottom: 16, background: '#fff', padding: '16px', borderRadius: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+        <Space size="middle">
+          <Input
+            placeholder="Cari SJ / Bundle / Customer / Driver..."
+            prefix={<SearchOutlined />}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={{ width: 350 }}
+            allowClear
+          />
+          <DatePicker 
+            placeholder="Filter Tanggal Plan" 
+            format="DD-MM-YYYY"
+            onChange={(date) => setFilterDate(date)}
+            value={filterDate}
+            style={{ width: 200 }}
+          />
+          {(searchText || filterDate) && (
+            <Button type="link" onClick={() => { setSearchText(""); setFilterDate(null); }}>
+              Reset Filter
+            </Button>
+          )}
+        </Space>
+      </div>
+
       <Table
         columns={mainColumns}
-        dataSource={data}
+        dataSource={filteredData}
         loading={loading}
         pagination={pagination}
         onChange={(p) => setPagination(p)}
-        rowClassName={() => "main-bundle-row"}
         expandable={{
           expandedRowRender: (record) => (
-            <div
-              style={{
-                padding: "8px 24px",
-                margin: 0,
-                backgroundColor: "#fafafa",
-              }}
-            >
+            <div style={{ padding: "12px 24px", background: "#fafafa" }}>
               <Table
                 columns={shipmentColumns()}
                 dataSource={record.shipments}
                 pagination={false}
                 size="small"
+                bordered
               />
             </div>
           ),
-          rowExpandable: (record) =>
-            record.shipments && record.shipments.length > 0,
         }}
       />
 
-      <div
-        style={{
-          marginTop: 16,
-          padding: "10px",
-          background: "#f0f2f5",
-          borderTop: "1px solid #d9d9d9",
-        }}
-      >
+      <div style={{ marginTop: 16, padding: "16px", background: "#fff", borderTop: "1px solid #f0f0f0", textAlign: 'right' }}>
         <Button
           type="primary"
+          size="large"
           onClick={handleOpenConfirmModal}
           disabled={bundleCountSelected === 0 || isSubmitting}
           loading={isSubmitting}
+          style={{ borderRadius: '6px', fontWeight: 'bold' }}
         >
           Accept ({bundleCountSelected} Selected)
         </Button>
       </div>
 
+      {/* MODALS preserved from previous code... */}
       <Modal
-        title={`Confirm Receipt (${totalShipmentsInSelectedBundles} items from ${selectedBundlesForSubmit.length} bundles)`}
+        title="Confirm Receipt"
         open={isConfirmModalOpen}
         onOk={executeSubmit}
         onCancel={() => setIsConfirmModalOpen(false)}
         confirmLoading={isSubmitting}
       >
-        <p>
-          Anda akan menyerahkan semua surat jalan dari bundle yang dipilih.
-          Lanjutkan?
-        </p>
-        <div
-          style={{
-            maxHeight: 200,
-            overflowY: "auto",
-            marginTop: 16,
-            border: "1px solid #f0f0f0",
-            padding: "8px",
-          }}
-        >
-          {selectedBundlesForSubmit.map((bundle) => (
-            <div key={bundle.key} style={{ marginBottom: "12px" }}>
-              <strong>Bundle: {bundle.bundleNo}</strong>
-              <ul style={{ paddingLeft: "20px", margin: "4px 0 0 0" }}>
-                {bundle.shipments.map((item) => (
-                  <li key={item.key}>{item.documentno}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+        <p>Terima semua surat jalan dari bundle yang dipilih? Lanjutkan?</p>
       </Modal>
 
       <Modal
         title="Confirm Reject"
         open={isModalRejectOpen}
         onOk={handleRejectOk}
-        onCancel={handleRejectCancel}
+        onCancel={() => setIsModalRejectOpen(false)}
       >
-        <p>
-          Apakah Anda yakin akan mereject dokumen{" "}
-          <strong>{itemToReject?.documentno}</strong>?
-        </p>
+        <p>Reject dokumen <b>{itemToReject?.documentno}</b>?</p>
       </Modal>
     </LayoutGlobal>
   );

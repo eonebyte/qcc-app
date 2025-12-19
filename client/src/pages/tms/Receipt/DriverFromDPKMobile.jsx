@@ -11,12 +11,15 @@ import {
   SpinLoading,
   SearchBar,
   Tag,
+  DatePicker,
+  Space,
 } from "antd-mobile";
 import {
   CalendarOutline,
   FileOutline,
   CheckOutline,
   CloseOutline,
+  CloseCircleFill,
 } from "antd-mobile-icons";
 import dayjs from "dayjs";
 import axios from "axios";
@@ -33,6 +36,11 @@ const DriverFromDPKMobile = () => {
   const [loading, setLoading] = useState(false);
   const [activeKey, setActiveKey] = useState([]);
   const [searchText, setSearchText] = useState("");
+  
+  // Filter Tanggal
+  const [filterDate, setFilterDate] = useState(null);
+  const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -83,38 +91,46 @@ const DriverFromDPKMobile = () => {
     }
   };
 
-  // --- LOGIC SEARCH & FILTERING ---
+  // --- LOGIC SEARCH & FILTERING (Teks & Tanggal) ---
   const filteredData = useMemo(() => {
-    if (!searchText) return dataList;
     const lowerSearch = searchText.toLowerCase();
 
     return dataList
       .map((bundle) => {
-        const isBundleMatch = bundle.bundleNo
-          .toLowerCase()
-          .includes(lowerSearch);
-        const matchingShipments = bundle.shipments.filter(
-          (s) =>
+        // Filter Shipment di dalam bundle
+        const matchingShipments = bundle.shipments.filter((s) => {
+          const matchesText = !searchText || (
             s.documentno.toLowerCase().includes(lowerSearch) ||
-            s.customerkey.toLowerCase().includes(lowerSearch) ||
-            s.customer.toLowerCase().includes(lowerSearch),
-        );
+            s.customerkey?.toLowerCase().includes(lowerSearch) ||
+            s.customer?.toLowerCase().includes(lowerSearch)
+          );
+          
+          const matchesDate = !filterDate || 
+            dayjs(s.plantime).format('YYYY-MM-DD') === dayjs(filterDate).format('YYYY-MM-DD');
 
-        if (isBundleMatch) return bundle;
+          return matchesText && matchesDate;
+        });
+
+        // Cek apakah Bundle No cocok (jika tidak ada filter tanggal)
+        const isBundleMatch = !filterDate && bundle.bundleNo.toLowerCase().includes(lowerSearch);
+
+        if (isBundleMatch) return bundle; // Jika bundle no cocok, tampilkan semua isinya
         if (matchingShipments.length > 0) {
           return { ...bundle, shipments: matchingShipments };
         }
         return null;
       })
       .filter((item) => item !== null);
-  }, [dataList, searchText]);
+  }, [dataList, searchText, filterDate]);
 
-  // Auto expand saat mencari
+  // Auto expand saat mencari atau filter tanggal
   useEffect(() => {
-    if (searchText) {
+    if (searchText || filterDate) {
       setActiveKey(filteredData.map((b) => b.key));
+    } else {
+        setActiveKey([]);
     }
-  }, [searchText, filteredData]);
+  }, [searchText, filterDate, filteredData]);
 
   // --- HANDLER CHECK SATUAN (Logic 3 Klik) ---
   const handleShipmentClick = (bundleNo, shipmentKey) => {
@@ -128,12 +144,7 @@ const DriverFromDPKMobile = () => {
               } else {
                 const newCount = s.clickCount + 1;
                 if (newCount >= 3) {
-                  return {
-                    ...s,
-                    checked: false,
-                    clickCount: 0,
-                    arrived: false,
-                  };
+                  return { ...s, checked: false, clickCount: 0, arrived: false };
                 }
                 return { ...s, clickCount: newCount };
               }
@@ -152,11 +163,10 @@ const DriverFromDPKMobile = () => {
     setDataList((prev) =>
       prev.map((bundle) => {
         if (bundle.bundleNo === bundleNo) {
-          // Hanya bisa pilih bundle jika SEMUA shipment sudah di-check
           const allChecked = bundle.shipments.every((s) => s.checked);
           if (!allChecked && !bundle.bundleSelected) {
             Toast.show({
-              content: "Check semua surat jalan terlebih dahulu",
+              content: "Check semua surat jalan (No SJ) terlebih dahulu",
               position: "bottom",
             });
             return bundle;
@@ -165,10 +175,7 @@ const DriverFromDPKMobile = () => {
           return {
             ...bundle,
             bundleSelected: newStatus,
-            shipments: bundle.shipments.map((s) => ({
-              ...s,
-              arrived: newStatus,
-            })),
+            shipments: bundle.shipments.map((s) => ({ ...s, arrived: newStatus })),
           };
         }
         return bundle;
@@ -193,7 +200,6 @@ const DriverFromDPKMobile = () => {
             fetchData();
           }
         } catch (error) {
-          console.log(error);
           Toast.show({ content: "Gagal reject", icon: "fail" });
         }
       },
@@ -212,7 +218,6 @@ const DriverFromDPKMobile = () => {
       onConfirm: async () => {
         setIsSubmitting(true);
         try {
-          // Filter data yang dikirim hanya yang checked
           const payload = {
             data: selectedBundles.map((b) => ({
               ...b,
@@ -230,9 +235,9 @@ const DriverFromDPKMobile = () => {
             Toast.show({ content: "Sukses!", icon: "success" });
             fetchData();
             setSearchText("");
+            setFilterDate(null);
           }
         } catch (error) {
-          console.log(error);
           Toast.show({ content: "Gagal memproses", icon: "fail" });
         } finally {
           setIsSubmitting(false);
@@ -257,14 +262,9 @@ const DriverFromDPKMobile = () => {
               />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: "600", fontSize: 15 }}>
-                {bundle.bundleNo}
-              </div>
+              <div style={{ fontWeight: "600", fontSize: 15 }}>{bundle.bundleNo}</div>
               <div style={{ fontSize: 12, color: "#666" }}>
-                {bundle.shipments.length} Docs •{" "}
-                {bundle.created
-                  ? dayjs(bundle.created).format("DD/MM/YY HH:mm")
-                  : "-"}
+                {bundle.shipments.length} Docs • {bundle.created ? dayjs(bundle.created).format("DD/MM/YY HH:mm") : "-"}
               </div>
             </div>
           </div>
@@ -277,93 +277,55 @@ const DriverFromDPKMobile = () => {
               style={{
                 marginBottom: 10,
                 borderRadius: 12,
-                borderLeft: item.checked
-                  ? "6px solid #52c41a"
-                  : "6px solid #1677ff",
+                borderLeft: item.checked ? "6px solid #52c41a" : "6px solid #1677ff",
                 boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
-                }}
-              >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <div style={{ flex: 1 }}>
-                  {/* DOCUMENT NO MENONJOL */}
+                  {/* DOCUMENT NO SANGAT MENONJOL */}
                   <div
                     style={{
-                      fontSize: 20,
-                      fontWeight: "800",
+                      fontSize: 22, // Diperbesar
+                      fontWeight: "900", // Lebih tebal
                       color: item.checked ? "#52c41a" : "#1677ff",
-                      marginBottom: 4,
+                      marginBottom: 6,
                       fontFamily: "monospace",
+                      letterSpacing: '1px'
                     }}
                   >
                     {item.documentno}
                   </div>
 
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: "600",
-                      color: "#333",
-                      marginBottom: 6,
-                    }}
-                  >
-                    {item.customerkey}
+                  <div style={{ fontSize: 14, fontWeight: "700", color: "#333", marginBottom: 6 }}>
+                     <Tag color='primary' fill='outline' style={{marginRight: 6}}>{item.customerkey}</Tag>
+                     {item.customer}
                   </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 12,
-                      color: "#888",
-                    }}
-                  >
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#888" }}>
                     <CalendarOutline />
-                    {item.plantime
-                      ? dayjs(item.plantime).format("DD MMM YYYY HH:mm")
-                      : "-"}
+                    Plan: {item.plantime ? dayjs(item.plantime).format("DD MMM YYYY") : "-"}
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                    alignItems: "flex-end",
-                  }}
-                >
-                  {/* TOMBOL CHECK */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
                   <Button
                     size="small"
                     color={item.checked ? "success" : "default"}
                     fill={item.checked ? "solid" : "outline"}
-                    onClick={() =>
-                      handleShipmentClick(bundle.bundleNo, item.key)
-                    }
-                    style={{ borderRadius: 8, minWidth: 80 }}
+                    onClick={() => handleShipmentClick(bundle.bundleNo, item.key)}
+                    style={{ borderRadius: 8, minWidth: 90 }}
                   >
                     {item.checked ? (
-                      <span style={{ fontSize: 11 }}>
-                        Checked {item.clickCount > 0 && `(${item.clickCount})`}
+                      <span style={{ fontSize: 11, fontWeight: 'bold' }}>
+                        CHECKED {item.clickCount > 0 && `(${item.clickCount})`}
                       </span>
                     ) : (
-                      <CheckOutline fontSize={18} />
+                      <CheckOutline fontSize={20} />
                     )}
                   </Button>
 
-                  <Button
-                    size="mini"
-                    color="danger"
-                    fill="none"
-                    onClick={() => handleRejectItem(item)}
-                  >
+                  <Button size="mini" color="danger" fill="none" onClick={() => handleRejectItem(item)}>
                     <CloseOutline /> Reject
                   </Button>
                 </div>
@@ -379,27 +341,51 @@ const DriverFromDPKMobile = () => {
 
   return (
     <LayoutGlobalMobile title="Driver from DPK">
-      {/* STICKY SEARCH BAR */}
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 99,
-          background: "#fff",
-          padding: "12px",
-          borderBottom: "1px solid #eee",
-        }}
-      >
-        <SearchBar
-          placeholder="Cari No SJ / Bundle / Customer..."
-          value={searchText}
-          onChange={setSearchText}
-          style={{ "--border-radius": "8px", "--background": "#f0f0f0" }}
-        />
+      {/* STICKY SEARCH & FILTER DATE */}
+      <div style={{ position: "sticky", top: 0, zIndex: 99, background: "#fff", padding: "12px", borderBottom: "1px solid #eee" }}>
+        <Space direction="vertical" block>
+            <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                    <SearchBar
+                    placeholder="Cari No SJ / Bundle / Customer..."
+                    value={searchText}
+                    onChange={setSearchText}
+                    style={{ "--border-radius": "8px", "--background": "#f0f0f0" }}
+                    />
+                </div>
+                <Button 
+                    onClick={() => setIsDatePickerVisible(true)}
+                    style={{ borderRadius: 8, background: filterDate ? '#e6f7ff' : '#f0f0f0', border: 'none' }}
+                >
+                    <CalendarOutline fontSize={20} color={filterDate ? '#1677ff' : '#666'} />
+                </Button>
+            </div>
+
+            {/* Chip Filter Tanggal Aktif */}
+            {filterDate && (
+                <Tag 
+                    color='primary' 
+                    fill='outline' 
+                    style={{ borderRadius: 12, padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    onClick={() => setFilterDate(null)}
+                >
+                    Tanggal: {dayjs(filterDate).format('DD MMM YYYY')}
+                    <CloseCircleFill fontSize={14} />
+                </Tag>
+            )}
+        </Space>
       </div>
 
+      <DatePicker
+        title='Filter Tanggal Plan'
+        visible={isDatePickerVisible}
+        onClose={() => setIsDatePickerVisible(false)}
+        precision='day'
+        onConfirm={val => setFilterDate(val)}
+      />
+
       <PullToRefresh onRefresh={fetchData}>
-        <div style={{ padding: 12, paddingBottom: 100, minHeight: "80vh" }}>
+        <div style={{ padding: 12, paddingBottom: 110, minHeight: "85vh" }}>
           {loading && (
             <AutoCenter style={{ padding: 20 }}>
               <SpinLoading color="primary" />
@@ -407,9 +393,7 @@ const DriverFromDPKMobile = () => {
           )}
 
           {!loading && filteredData.length === 0 && (
-            <AutoCenter
-              style={{ marginTop: 40, flexDirection: "column", gap: 10 }}
-            >
+            <AutoCenter style={{ marginTop: 40, flexDirection: "column", gap: 10 }}>
               <FileOutline fontSize={48} color="#ccc" />
               <div style={{ color: "#999" }}>Data tidak ditemukan</div>
             </AutoCenter>
@@ -423,15 +407,7 @@ const DriverFromDPKMobile = () => {
 
       {/* FLOATING ACCEPT BUTTON */}
       {selectedCount > 0 && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 60,
-            left: 12,
-            right: 12,
-            zIndex: 100,
-          }}
-        >
+        <div style={{ position: "fixed", bottom: 65, left: 12, right: 12, zIndex: 100 }}>
           <Button
             block
             color="primary"
