@@ -96,7 +96,7 @@ const DriverFromDPKMobile = () => {
         const matchingShipments = bundle.shipments.filter(
           (s) =>
             s.documentno.toLowerCase().includes(lowerSearch) ||
-             s.customerkey.toLowerCase().includes(lowerSearch) ||
+            s.customerkey.toLowerCase().includes(lowerSearch) ||
             s.customer.toLowerCase().includes(lowerSearch),
         );
 
@@ -206,6 +206,8 @@ const DriverFromDPKMobile = () => {
     Dialog.confirm({
       title: "Konfirmasi Penerimaan",
       content: `Terima ${selectedBundles.length} Bundle terpilih?`,
+      confirmText: "Terima",
+      cancelText: "Batal",
       onConfirm: async () => {
         setIsSubmitting(true);
         try {
@@ -440,7 +442,7 @@ const DriverFromDPKMobile = () => {
               borderRadius: 12,
             }}
           >
-            Accept ({selectedCount} Bundle)
+            Terima ({selectedCount} Bundle)
           </Button>
         </div>
       )}
