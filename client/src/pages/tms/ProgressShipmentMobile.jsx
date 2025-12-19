@@ -32,14 +32,25 @@ const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 // --- HELPER FORMAT ---
 const formatDateTime = (isoString) => {
-  if (!isoString) return "-";
-  return dayjs(isoString).format("DD-MM-YYYY HH:mm");
+  if (!isoString) return null;
+  try {
+    return dayjs(isoString).add(7, "hour").format("DD-MM-YYYY HH:mm");
+  } catch (error) {
+    console.error("Invalid date format:", error);
+    return null;
+  }
 };
 
 const formatTime = (isoString) => {
   if (!isoString) return "-";
-  return dayjs(isoString).format("HH:mm");
+  try {
+    return dayjs(isoString).add(7, "hour").format("HH:mm");
+  } catch (error) {
+    console.error("Invalid date format:", error);
+    return "-";
+  }
 };
+
 
 // --- STEP DEFINITIONS (SAMA PERSIS DENGAN WEB) ---
 const stepDefinitions = [

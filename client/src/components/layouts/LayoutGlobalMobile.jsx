@@ -129,7 +129,7 @@ export default function LayoutGlobalMobile({
       actions.push({
         type: 'receipt',
         key: "/receipt/driver/from/dpk",
-        text: "Terima dari DPK",
+        text: "Terima SJ",
         icon: <LoginOutlined />,
         // description: "Terima dari DPK",
       });
@@ -204,14 +204,14 @@ export default function LayoutGlobalMobile({
         {
           type: 'handover',
           key: "/handover/checkin/customer",
-          text: "Penyerahan ke Customer",
+          text: "Penyerahan SJ",
           icon: <SendOutlined />,
           // description: "Penyerahan ke Customer",
         },
         {
           type: 'handover',
           key: "/handover/checkout/droponly",
-          text: "Pengambilan SJ dari Customer",
+          text: "SJ di Customer",
           icon: <DownCircleOutlined />,
           // description: "Pengambilan SJ Drop Only",
         },

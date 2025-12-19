@@ -282,7 +282,7 @@ export default function CheckOutMobile() {
                     ))}
 
                     <div style={{ marginTop: 20, background: '#fafafa', padding: 10, borderRadius: 8 }}>
-                        <div style={{ fontWeight: 'bold', marginBottom: 5 }}>Add Drop Only:</div>
+                        <div style={{ fontWeight: 'bold', marginBottom: 5 }}>SJ masih di Customer (pilih untuk diambil):</div>
                         {tableDataDropOnly.map(d => (
                             <div key={d.key} onClick={() => toggleSelectionDropOnly(d)} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid #eee' }}>
                                 <Checkbox checked={selectedRowsDropOnly.some(x => x.key === d.key)} />
