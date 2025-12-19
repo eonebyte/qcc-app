@@ -4549,6 +4549,8 @@ class TMS {
                 WHERE t.driver_id = $1
                 AND t.checkpoin_id = '5'
                 AND t.trip_mode IS NULL
+                AND arrivedat_customer = 'N'
+                ORDER BY created ASC
                 `;
 
       const resultPg = await dbClient.query(queryPostgres, [driver_id]);

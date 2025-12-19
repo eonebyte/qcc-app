@@ -976,7 +976,7 @@ class Handover {
         // Update trip_mode = RT
         const updateQuery = `
                 UPDATE adw_trackingsj
-                SET checkpoin_id = $1, updated = NOW(), trip_mode = 'RT'
+                SET checkpoin_id = $1, updated = NOW(), trip_mode = 'RT', arrivedat_customer = 'Y'
                 WHERE m_inout_id = ANY($2::integer[]) AND checkpoin_id = $3
                 RETURNING adw_trackingsj_id, m_inout_id;
             `;
@@ -1118,7 +1118,8 @@ class Handover {
             SET
                 checkpoin_id = $1,
                 updated = NOW(),
-                trip_mode = 'RT'
+                trip_mode = 'RT',
+                arrivedat_customer = 'Y'
             WHERE
                 m_inout_id = ANY($2::integer[])
                 AND checkpoin_id = $3

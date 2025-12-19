@@ -193,6 +193,7 @@ const DriverFromDPKMobile = () => {
             fetchData();
           }
         } catch (error) {
+          console.log(error);
           Toast.show({ content: "Gagal reject", icon: "fail" });
         }
       },
@@ -231,6 +232,7 @@ const DriverFromDPKMobile = () => {
             setSearchText("");
           }
         } catch (error) {
+          console.log(error);
           Toast.show({ content: "Gagal memproses", icon: "fail" });
         } finally {
           setIsSubmitting(false);
