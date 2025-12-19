@@ -813,6 +813,7 @@ class Handover {
             SELECT
                 mi.M_INOUT_ID,
                 mi.DOCUMENTNO,
+                cb.VALUE AS CUSTOMERKEY,
                 cb.NAME AS CUSTOMER,
                 TO_DATE(
                     TO_CHAR(mi.MOVEMENTDATE, 'YYYY-MM-DD') || ' ' ||
@@ -842,6 +843,7 @@ class Handover {
           m_inout_id: row.M_INOUT_ID,
           documentno: row.DOCUMENTNO,
           customer: row.CUSTOMER,
+          customerkey: row.CUSTOMERKEY,
           plantime: row.PLANTIME,
           checkpoin_id: 6,
           driverby: pgInfo.driverby || null,

@@ -861,6 +861,7 @@ class Receipt {
             SELECT
                 mi.M_INOUT_ID,
                 mi.DOCUMENTNO,
+                cb.VALUE AS CUSTOMERKEY,
                 cb.NAME AS CUSTOMER,
                 TO_DATE(
                     TO_CHAR(MOVEMENTDATE, 'YYYY-MM-DD') || ' ' || TO_CHAR(PLANTIME, 'HH24:MI:SS'),
@@ -892,6 +893,7 @@ class Receipt {
           drivername: pg.drivername,
           documentno: o ? o.DOCUMENTNO : "N/A",
           customer: o ? o.CUSTOMER : "N/A",
+          customerkey: o ? o.CUSTOMERKEY : "N/A",
           plantime: o ? o.PLANTIME : null,
           sppno: o ? o.SPPNO : "N/A",
         };
