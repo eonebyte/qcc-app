@@ -81,6 +81,7 @@ export default function CheckOutDropOnlyMobile() {
       const matchesSearch =
         !searchText ||
         (item.documentno && item.documentno.toLowerCase().includes(lower)) ||
+        (item.customerkey && item.customerkey.toLowerCase().includes(lower)) ||
         (item.customer && item.customer.toLowerCase().includes(lower)) ||
         (item.drivername && item.drivername.toLowerCase().includes(lower));
 
