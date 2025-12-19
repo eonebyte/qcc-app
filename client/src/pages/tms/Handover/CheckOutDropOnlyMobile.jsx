@@ -126,7 +126,7 @@ export default function CheckOutDropOnlyMobile() {
       const json = await resp.json();
       Toast.clear();
 
-      if (json.data && json.data.insertedCount > 0) {
+      if (json.data && json.data.updatedCount > 0) {
         Toast.show({ content: "Receipt SJ berhasil!", icon: "success" });
         setIsPopupOpen(false);
         setSelectedRows([]);
