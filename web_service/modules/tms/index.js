@@ -3285,7 +3285,7 @@ class TMS {
                 )
                 SELECT
                     ats.m_inout_id, '' AS customer, '' AS adw_tms_id, ats.documentno, ats.plantime,
-                    cl.cancel_logs, 
+                    cl.cancel_logs,
                     EXISTS (
                       SELECT 1
                       FROM adw_trackingsj_events ce
@@ -4547,6 +4547,8 @@ class TMS {
                     t.tnkb_id
                 FROM adw_trackingsj t
                 WHERE t.driver_id = $1
+                AND t.checkpoin_id = '5'
+                AND t.trip_mode IS NULL
                 `;
 
       const resultPg = await dbClient.query(queryPostgres, [driver_id]);
@@ -5971,17 +5973,17 @@ class TMS {
       dbClient = await server.pg.connect();
 
       const query = `
-        SELECT 
+        SELECT
        	ate.adw_trackingsj_events_id,
-       	ate.adw_event_type action, 
-       	ate.notes reason, 
+       	ate.adw_event_type action,
+       	ate.notes reason,
        	ate.created,
-       	CASE 
+       	CASE
         		WHEN ate.adw_from_actor = 'Marketing' THEN au.name
         		ELSE ate.username
        	END createdby_name
-                FROM adw_trackingsj_events ate 
-                JOIN ad_user au ON ate.createdby = au.ad_user_id 
+                FROM adw_trackingsj_events ate
+                JOIN ad_user au ON ate.createdby = au.ad_user_id
                 WHERE ate.adw_trackingsj_id = $1
        	AND ate.adw_event_type = 'CANCEL'
         ORDER BY ate.created DESC
