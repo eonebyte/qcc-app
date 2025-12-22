@@ -1,37 +1,36 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   Table,
   Button,
-  Tabs,
   Card,
   notification,
-  Badge,
   Tag,
   Modal,
   Spin,
   message,
   Popover,
+  Input,
+  DatePicker,
+  Space,
+  Tooltip,
+  Flex,
 } from "antd";
 import {
-  AndroidOutlined,
-  AppleOutlined,
   CheckCircleOutlined,
-  DownloadOutlined,
-  FileSyncOutlined,
+  FileExcelOutlined,
   HourglassOutlined,
   PrinterOutlined,
   SearchOutlined,
   SyncOutlined,
 } from "@ant-design/icons";
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
 import * as XLSX from "xlsx";
-pdfMake.vfs = pdfFonts.vfs;
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import { useSelector } from "react-redux";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+
+const { RangePicker } = DatePicker;
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 const backEndUrlAttachment =
@@ -40,418 +39,373 @@ const backEndUrlAttachment =
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-// fungsi format
 const formatDate = (iso) => {
   if (!iso) return "-";
-  // convert ke WIB dan format YYYY-MM-DD
   return dayjs(iso).tz("Asia/Jakarta").format("YYYY-MM-DD");
 };
+
 const HistoryBundleHandover = () => {
   const user = useSelector((state) => state.auth.user);
   const role = user.title;
+
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
-
   const [sjData, setSjData] = useState({});
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [pdfBlobUrl, setPdfBlobUrl] = useState(null); // URL untuk iframe
-  const [processingPdf, setProcessingPdf] = useState(false); // Loading saat edit PDF
-
+  // Filter States
   const [bundleSearch, setBundleSearch] = useState("");
+  const [sjSearch, setSjSearch] = useState("");
+  const [driverSearch, setDriverSearch] = useState("");
+  const [dateRange, setDateRange] = useState(null);
 
-  const handleSearchBundle = () => {
-    if (!bundleSearch.trim()) {
-      message.warning("Masukkan Bundle No untuk filter");
-      return;
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
+
+  // PERBAIKAN: Gunakan ID untuk melacak baris mana yang sedang loading
+  const [processingId, setProcessingId] = useState(null);
+
+  // Checkpoint Logic
+  let cPoint, cPointSecond;
+  switch (role) {
+    case "delivery": cPoint = 2; cPointSecond = 10; break;
+    case "dpk": cPoint = 4; cPointSecond = 8; break;
+    case "driver": cPoint = 6; break;
+    case "marketing": cPoint = 12; break;
+    default: break;
+  }
+
+  const loadData = useCallback(async (filters = {}) => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      params.append("checkpoint", cPoint || "");
+      if (cPointSecond) params.append("checkpoint_second", cPointSecond);
+      if (filters.bundle) params.append("bundle_no", filters.bundle);
+      if (filters.sj) params.append("sj_no", filters.sj);
+      if (filters.driver) params.append("driver", filters.driver);
+      if (filters.startDate) params.append("start_date", filters.startDate);
+      if (filters.endDate) params.append("end_date", filters.endDate);
+
+      const res = await fetch(`${backEndUrl}/tms/listbundle?${params.toString()}`, {
+        credentials: "include",
+      });
+      const json = await res.json();
+      setData(json.data.map(item => ({
+        key: item.adw_handover_group_id,
+        ...item
+      })));
+    } catch (err) {
+      console.log(err);
+
+      message.error("Gagal memuat data");
+    } finally {
+      setLoading(false);
     }
+  }, [cPoint, cPointSecond]);
 
-    loadData(bundleSearch); // ⬅ langsung ke server
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleSearch = () => {
+    loadData({
+      bundle: bundleSearch,
+      sj: sjSearch,
+      driver: driverSearch,
+      startDate: dateRange ? dateRange[0].format("YYYY-MM-DD") : "",
+      endDate: dateRange ? dateRange[1].format("YYYY-MM-DD") : "",
+    });
   };
 
   const handleResetFilter = () => {
     setBundleSearch("");
-    loadData(""); // tanpa parameter → fetch semua data
-  };
-
-  useEffect(() => {
+    setSjSearch("");
+    setDriverSearch("");
+    setDateRange(null);
     loadData();
-  }, []);
-
-  let cPoint;
-  let cPointSecond;
-
-  switch (role) {
-    case "delivery": // delivery handover chekcpoint menjadi 2
-      cPoint = 2;
-      cPointSecond = 10;
-      break;
-    case "dpk": // delivery handover chekcpoint menjadi 4
-      cPoint = 4;
-      cPointSecond = 8;
-      break;
-    case "driver":
-      cPoint = 6;
-      break;
-    case "marketing":
-      cPoint = 12;
-      break;
-    default:
-      break;
-  }
+  };
 
   const loadSJ = async (bundleId) => {
-    if (sjData[bundleId]) return sjData[bundleId]; // sudah ada, return dari state
-
-    const res = await fetch(`${backEndUrl}/tms/listbundle/${bundleId}/sj`, {
-      credentials: "include",
-    });
-
+    if (sjData[bundleId]) return;
+    const res = await fetch(`${backEndUrl}/tms/listbundle/${bundleId}/sj`, { credentials: "include" });
     const json = await res.json();
-
-    setSjData((prev) => ({
-      ...prev,
-      [bundleId]: json.data,
-    }));
-
-    return json.data; // <-- kunci supaya Promise.all punya hasil
+    setSjData(prev => ({ ...prev, [bundleId]: json.data }));
   };
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(
-        `${backEndUrl}/tms/listbundle?checkpoint=${cPoint}&checkpoint_second=${cPointSecond}`,
-        { credentials: "include" },
-      );
-      const json = await res.json();
-
-      const mapped = json.data.map((item) => ({
-        key: item.adw_handover_group_id,
-        documentno: item.documentno,
-        created: item.created,
-        createdby: item.createdby,
-        received: item.received,
-        receivedby: item.receivedby,
-        total_shipments: item.total_shipments,
-        attachment: item.attachment,
-        toactor: item.toactor,
-      }));
-
-      setData(mapped);
-    } catch (err) {
-      console.error("Error fetching:", err);
-    } finally {
-      setLoading(false);
-    }
+  const highlightText = (text, query) => {
+    if (!query || !text) return text;
+    const parts = text.toString().split(new RegExp(`(${query})`, "gi"));
+    return (
+      <span>
+        {parts.map((part, i) =>
+          part.toLowerCase() === query.toLowerCase()
+            ? <mark key={i} style={{ backgroundColor: "#ffc069", padding: 0 }}>{part}</mark>
+            : part
+        )}
+      </span>
+    );
   };
 
   const handlePrint = async (record) => {
-    // 1. Validasi
-    const isWaiting = !record.received || record.received === "-";
-    if (isWaiting) {
-      notification.warning({
-        message: "Belum Bisa Dicetak",
-        description:
-          "Dokumen belum diterima. Silakan lakukan proses penerimaan dahulu.",
-      });
-      return;
+    if (!record.received || record.received === "-") {
+      return notification.warning({ message: "Belum Bisa Dicetak", description: "Dokumen belum diterima." });
     }
-
-    if (!record.attachment) {
-      notification.error({
-        message: "File PDF tidak ditemukan pada data ini.",
-      });
-      return;
-    }
-
     try {
-      setProcessingPdf(true);
+      // PERBAIKAN: Set ID baris yang sedang diproses
+      setProcessingId(record.key);
 
-      // 2. Fetch File Statis dari Backend
-      // Pastikan URL path statisnya benar sesuai config fastify static Anda
-      const staticUrl = `${backEndUrlAttachment}/files/handover/${record.attachment}`;
-
-      const response = await fetch(staticUrl);
-      if (!response.ok) throw new Error("Gagal mengunduh file PDF asli");
-
-      // Ambil data binary (ArrayBuffer)
+      const response = await fetch(`${backEndUrlAttachment}/files/handover/${record.attachment}`);
       const existingPdfBytes = await response.arrayBuffer();
-
-      // 3. Load ke PDF-Lib (Frontend Processing)
       const pdfDoc = await PDFDocument.load(existingPdfBytes);
       const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const firstPage = pdfDoc.getPages()[0];
+      const printDate = dayjs().tz("Asia/Jakarta").format("DD/MM/YYYY HH:mm") + " WIB";
+      firstPage.drawText(`Print Date: ${printDate}`, { x: 40, y: firstPage.getSize().height - 15, size: 8, font: helveticaFont, color: rgb(0, 0, 0) });
 
-      // 4. Tambahkan Text Print Date di Halaman Pertama
-      const pages = pdfDoc.getPages();
-      const firstPage = pages[0];
-      // const { height } = firstPage.getSize(); // jika butuh koordinat dinamis
-
-      const printDate =
-        dayjs().tz("Asia/Jakarta").format("DD/MM/YYYY HH:mm") + " WIB";
-
-      const { height } = firstPage.getSize();
-
-      firstPage.drawText(`Print Date: ${printDate}`, {
-        x: 40,
-        y: height - 15, // Posisi dari bawah kertas
-        size: 8,
-        font: helveticaFont,
-        color: rgb(0, 0, 0),
-      });
-
-      // 5. Simpan Hasil Edit menjadi Blob
       const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes], { type: "application/pdf" });
-
-      // 6. Buat URL Object sementara
-      const objectUrl = URL.createObjectURL(blob);
-      setPdfBlobUrl(objectUrl);
-
-      // 7. Buka Modal
+      setPdfBlobUrl(URL.createObjectURL(new Blob([pdfBytes], { type: "application/pdf" })));
       setIsModalOpen(true);
     } catch (error) {
-      console.error(error);
-      notification.error({
-        message: "Gagal Memproses PDF",
-        description: error.message,
-      });
+      console.log(error);
+
+      notification.error({ message: "Gagal Memproses PDF" });
     } finally {
-      setProcessingPdf(false);
+      // PERBAIKAN: Reset kembali ke null
+      setProcessingId(null);
     }
   };
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    // Bersihkan memory URL agar tidak memory leak
-    if (pdfBlobUrl) {
-      URL.revokeObjectURL(pdfBlobUrl);
-      setPdfBlobUrl(null);
-    }
-  };
-
-  const exportExcel = () => {
+  const exportExcel = async () => {
     if (!data || data.length === 0) {
       message.warning("Tidak ada data untuk diexport");
       return;
     }
 
-    // 1. Siapkan data untuk Excel
-    const excelData = data.map((item, index) => ({
-      No: index + 1,
-      "Bundle No": item.documentno,
-      "Total Shipments": item.total_shipments,
-      "Date Handover": formatDate(item.created),
-      "Date Receipt": formatDate(item.received),
-      Status:
-        !item.received || item.received === "-" || item.received === ""
-          ? "Waiting Receipt"
-          : "Completed",
-    }));
+    const hide = message.loading("Sedang menyiapkan data report...", 0);
+    setLoading(true);
 
-    // 2. Convert JSON → Sheet
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    try {
+      const reportData = [];
 
-    // 3. Buat workbook
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "History Delivery");
+      // 1. Loop semua bundle yang ada di tabel (hasil filter)
+      for (const bundle of data) {
+        let sjs = sjData[bundle.key];
 
-    // 4. Nama file
-    const filename = `History_Delivery_${dayjs().format(
-      "YYYYMMDD_HHmmss",
-    )}.xlsx`;
+        // 2. Jika data SJ belum pernah di-load (lazy load), ambil dulu dari server
+        if (!sjs) {
+          try {
+            const res = await fetch(`${backEndUrl}/tms/listbundle/${bundle.key}/sj`, {
+              credentials: "include",
+            });
+            const json = await res.json();
+            sjs = json.data;
+            // Simpan ke state agar tidak perlu fetch ulang jika user expand manual nanti
+            setSjData((prev) => ({ ...prev, [bundle.key]: json.data }));
+          } catch (err) {
+            console.log(err);
 
-    // 5. Export file
-    XLSX.writeFile(workbook, filename);
+            console.error(`Gagal mengambil SJ untuk bundle ${bundle.documentno}`);
+            sjs = [];
+          }
+        }
+
+        // 3. Masukkan data ke array report (Flattening)
+        if (sjs && sjs.length > 0) {
+          sjs.forEach((sj) => {
+            reportData.push({
+              "Bundle No": bundle.documentno,
+              "Destination": bundle.toactor,
+              "Total SJ in Bundle": bundle.total_shipments,
+              "SJ Number": sj.documentno,
+              "Driver Name": sj.drivername,
+              "Date Handover": formatDate(bundle.created),
+              "Date Received": formatDate(bundle.received),
+              "Receiver": bundle.receivedby || "-",
+              "Status": bundle.received && bundle.received !== "-" ? "Completed" : "Waiting Receipt",
+            });
+          });
+        } else {
+          // Fallback jika bundle tidak punya SJ (data kosong)
+          reportData.push({
+            "Bundle No": bundle.documentno,
+            "Destination": bundle.toactor,
+            "Total SJ in Bundle": bundle.total_shipments,
+            "SJ Number": "-",
+            "Driver Name": "-",
+            "Date Handover": formatDate(bundle.created),
+            "Date Received": formatDate(bundle.received),
+            "Receiver": "-",
+            "Status": "No Data",
+          });
+        }
+      }
+
+      // 4. Generate Worksheet
+      const ws = XLSX.utils.json_to_sheet(reportData);
+
+      // 5. Atur lebar kolom agar rapi (optional tapi profesional)
+      const colWidths = [
+        { wch: 18 }, // Bundle No
+        { wch: 15 }, // Destination
+        { wch: 15 }, // Total SJ
+        { wch: 20 }, // SJ Number
+        { wch: 20 }, // Driver Name
+        { wch: 15 }, // Date Handover
+        { wch: 15 }, // Date Received
+        { wch: 15 }, // Receiver
+        { wch: 15 }, // Status
+      ];
+      ws['!cols'] = colWidths;
+
+      // 6. Buat Workbook dan download
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Handover Detail Report");
+
+      const fileName = `Report_Handover_${dayjs().format("YYYYMMDD_HHmmss")}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      message.success("Report berhasil diexport");
+    } catch (error) {
+      console.error(error);
+      message.error("Gagal melakukan export excel");
+    } finally {
+      hide(); // Tutup loading message
+      setLoading(false);
+    }
   };
 
   const columns = [
-    {
-      title: "No",
-      key: "no",
-      width: 70,
-      align: "center",
-      render: (text, record, index) => index + 1,
-    },
+    { title: "No", key: "no", width: 50, align: "center", render: (_, __, i) => i + 1 },
     {
       title: "Bundle No",
       dataIndex: "documentno",
-      render: (value) => (
-        <b>{value}</b>
-        // <a href={`/history/detail?documentno=${value}`}>
-        //     <b>{value}</b>
-        // </a>
-      ),
+      render: (val) => highlightText(val, bundleSearch)
     },
-    {
-      title: "To",
-      dataIndex: "toactor",
-      align: "center",
-    },
-    {
-      title: "Total Shipments",
-      dataIndex: "total_shipments",
-      align: "center",
-    },
-    {
-      title: "Date Handover",
-      dataIndex: "created",
-      align: "center",
-      render: (value) => formatDate(value),
-    },
-    {
-      title: "Date Receipt",
-      dataIndex: "received",
-      align: "center",
-      render: (value) => formatDate(value),
-    },
+    { title: "To", dataIndex: "toactor", align: "center" },
+    { title: "Total SJ", dataIndex: "total_shipments", align: "center", width: 100 },
+    { title: "Date Handover", dataIndex: "created", align: "center", render: formatDate },
+    { title: "Date Receipt", dataIndex: "received", align: "center", render: formatDate },
     {
       title: "Status",
       align: "center",
-      render: (_, record) => {
-        const waiting =
-          record.received == null ||
-          record.received === "-" ||
-          record.received === "";
-
-        if (waiting) {
-          return (
-            <Popover content={"Waiting"}>
-              <Tag color="gold">
-                <HourglassOutlined />
-              </Tag>
-            </Popover>
-          );
-        }
-
+      width: 100,
+      render: (_, r) => {
+        const waiting = !r.received || r.received === "-";
         return (
-          <Popover content={"Completed"}>
-            <Tag color="green">
-              <CheckCircleOutlined />
-            </Tag>
-          </Popover>
+          <Tag color={waiting ? "gold" : "green"} style={{ borderRadius: 10, margin: 0 }}>
+            {waiting ? <HourglassOutlined /> : <CheckCircleOutlined />} {waiting ? "Waiting" : "Done"}
+          </Tag>
         );
       },
     },
     {
-      title: "Actions",
-      dataIndex: "actions",
+      title: "Print",
       align: "center",
-      render: (text, record) => (
-        <Button
-          icon={<PrinterOutlined />}
-          type="default"
-          onClick={() => handlePrint(record)}
-          loading={processingPdf} // Loading saat fetch & edit pdf
-          disabled={loading}
-        ></Button>
+      width: 80,
+      render: (_, r) => (
+        <Tooltip title="Cetak PDF">
+          <Button
+            type="text"
+            icon={<PrinterOutlined style={{ color: '#1890ff' }} />}
+            onClick={() => handlePrint(r)}
+            // PERBAIKAN: Loading hanya aktif jika ID baris ini cocok dengan processingId
+            loading={processingId === r.key}
+            // Optional: Disable tombol baris lain jika ada satu yang sedang loading
+            disabled={processingId !== null && processingId !== r.key}
+          />
+        </Tooltip>
       ),
     },
   ];
 
   const expandedRow = (record) => {
     const rows = sjData[record.key];
-
-    if (!rows) {
-      return <div style={{ padding: 20 }}>Loading SJ...</div>;
-    }
-
+    if (!rows) return <div style={{ padding: 10 }}><Spin size="small" /> Memuat data...</div>;
     return (
-      <div style={{ padding: "5px 25px" }}>
-        <Table
-          columns={[
-            { title: "SJ No", dataIndex: "documentno" },
-            { title: "Driver", dataIndex: "drivername" },
-          ]}
-          dataSource={rows.map((r) => ({ ...r, key: r.adw_trackingsj_id }))}
-          pagination={false}
-          size="small"
-          bordered // <-- Kelihatan lebih rapi
-          style={{ margin: 0 }}
-          scroll={{ x: "max-content" }}
-        />
-      </div>
+      <Table
+        columns={[
+          { title: "SJ No", dataIndex: "documentno", render: (t) => highlightText(t, sjSearch) },
+          { title: "Driver", dataIndex: "drivername", render: (t) => highlightText(t, driverSearch) },
+        ]}
+        dataSource={rows}
+        pagination={false}
+        size="small"
+        bordered
+        style={{ margin: "10px 20px" }}
+      />
     );
   };
 
   return (
-    <>
-      <div
-        style={{ marginBottom: 10, marginLeft: 10, display: "flex", gap: 10 }}
-      >
-        {/* Input Filter Bundle */}
-        <input
-          type="text"
-          placeholder="Cari Bundle No..."
-          value={bundleSearch}
-          onChange={(e) => setBundleSearch(e.target.value)}
-          style={{
-            padding: "6px 10px",
-            borderRadius: 6,
-            border: "1px solid #ccc",
-            width: 200,
-          }}
-        />
+    <div style={{ padding: "16px" }}>
+      <Card size="small" variant="bordered" style={{ marginBottom: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+        <Flex justify="space-between" align="center" wrap="wrap" gap="small">
+          <Space wrap>
+            <Input
+              placeholder="Bundle No"
+              value={bundleSearch}
+              onChange={(e) => setBundleSearch(e.target.value)}
+              onPressEnter={handleSearch}
+              style={{ width: 140 }}
+              prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+              allowClear
+            />
+            <Input
+              placeholder="SJ No"
+              value={sjSearch}
+              onChange={(e) => setSjSearch(e.target.value)}
+              onPressEnter={handleSearch}
+              style={{ width: 140 }}
+              allowClear
+            />
+            <Input
+              placeholder="Driver"
+              value={driverSearch}
+              onChange={(e) => setDriverSearch(e.target.value)}
+              onPressEnter={handleSearch}
+              style={{ width: 140 }}
+              allowClear
+            />
+            <RangePicker
+              value={dateRange}
+              onChange={setDateRange}
+              style={{ width: 230 }}
+            />
+            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch} />
+            <Tooltip title="Reset Filter">
+              <Button icon={<SyncOutlined />} onClick={handleResetFilter} />
+            </Tooltip>
+          </Space>
 
-        {/* Tombol Search */}
-        <Button
-          icon={<SearchOutlined />}
-          type="primary"
-          onClick={handleSearchBundle}
-        ></Button>
+          <Button icon={<FileExcelOutlined />} onClick={exportExcel} />
+        </Flex>
+      </Card>
 
-        <Button
-          icon={<SyncOutlined />}
-          type="default"
-          onClick={handleResetFilter}
-        ></Button>
-
-        <Button
-          icon={<DownloadOutlined />}
-          type="default"
-          onClick={exportExcel}
-        ></Button>
-      </div>
       <Table
         loading={loading}
         columns={columns}
         dataSource={data}
-        pagination={{ pageSize: 10 }}
+        size="middle"
+        pagination={{ pageSize: 10, showSizeChanger: true }}
         expandable={{
-          expandedRowRender: (record) => expandedRow(record),
-          onExpand: (expanded, record) => {
-            if (expanded) loadSJ(record.key);
-          },
+          expandedRowRender: expandedRow,
+          onExpand: (expanded, record) => expanded && loadSJ(record.key),
         }}
+        style={{ backgroundColor: "white", borderRadius: 8 }}
       />
+
       <Modal
-        styles={{ content: { padding: 10 } }}
-        title="Preview Document"
+        title="Pratinjau Dokumen"
         open={isModalOpen}
-        onCancel={handleCloseModal}
-        footer={[
-          <Button key="close" onClick={handleCloseModal}>
-            Close
-          </Button>,
-        ]}
-        width={1000} // Lebar modal
-        style={{ top: 20 }}
+        onCancel={() => setIsModalOpen(false)}
+        footer={[<Button key="close" onClick={() => setIsModalOpen(false)}>Tutup</Button>]}
+        width={1000}
+        centered
+        destroyOnClose
       >
-        {pdfBlobUrl ? (
-          <iframe
-            src={pdfBlobUrl}
-            width="100%"
-            height="600px"
-            style={{ border: "none" }}
-            title="PDF Preview"
-          />
-        ) : (
-          <div style={{ textAlign: "center", padding: 50 }}>
-            <Spin tip="Generating PDF Preview..." />
-          </div>
-        )}
+        <iframe src={pdfBlobUrl} width="100%" height="700px" style={{ border: "none" }} title="PDF Preview" />
       </Modal>
-    </>
+    </div>
   );
 };
 

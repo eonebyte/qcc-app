@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
     Card,
     Button,
@@ -9,31 +9,35 @@ import {
     Popup,
     Toast,
     AutoCenter,
-    SpinLoading
+    SpinLoading,
+    Space,
+    DatePicker,
+    Input,
+    Form,
 } from "antd-mobile";
 import {
-    CheckCircleOutline,
-    ClockCircleOutline,
+    FilterOutline,
     FileOutline,
-    DownOutline
+    SearchOutline,
+    CalendarOutline,
 } from "antd-mobile-icons";
-
-
 import { PrinterOutlined } from '@ant-design/icons';
-
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import { useSelector } from "react-redux";
+import { Flex } from "antd";
 
-const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
-const backEndUrlAttachment = import.meta.env.VITE_BACKEND_URL_ATTACHMENT || 'http://localhost:3200';
+const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
+const backEndUrlAttachment =
+    import.meta.env.VITE_BACKEND_URL_ATTACHMENT || "http://localhost:3200";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-const formatDate = (iso) => iso ? dayjs(iso).tz("Asia/Jakarta").format("DD/MM/YYYY") : "-";
+const formatDate = (iso) =>
+    iso ? dayjs(iso).tz("Asia/Jakarta").format("DD/MM/YYYY") : "-";
 
 const HistoryBundleHandoverMobile = () => {
     const user = useSelector((state) => state.auth.user);
@@ -41,16 +45,25 @@ const HistoryBundleHandoverMobile = () => {
 
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [sjData, setSjData] = useState({}); // Cache SJ Data
+    const [sjData, setSjData] = useState({});
 
+    // Filter States
     const [bundleSearch, setBundleSearch] = useState("");
+    const [sjSearch, setSjSearch] = useState("");
+    const [driverSearch, setDriverSearch] = useState("");
+    const [startDate, setStartDate] = useState(null);
+    const [endDate, setEndDate] = useState(null);
 
-    // PDF States
+    // UI States
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isPdfOpen, setIsPdfOpen] = useState(false);
     const [pdfUrl, setPdfUrl] = useState(null);
-    const [processingPdf, setProcessingPdf] = useState(false);
+    const [processingId, setProcessingId] = useState(null);
 
-    // --- LOGIC ROLE CHECKPOINT ---
+    const [pickerStartVisible, setPickerStartVisible] = useState(false);
+    const [pickerEndVisible, setPickerEndVisible] = useState(false);
+
+    // --- LOGIC ROLE ---
     let cPoint, cPointSecond;
     switch (role) {
         case "delivery": cPoint = 2; cPointSecond = 10; break;
@@ -60,199 +73,260 @@ const HistoryBundleHandoverMobile = () => {
         default: break;
     }
 
-    // --- FETCH DATA BUNDLE ---
-    const loadData = async (searchVal = "") => {
+    const loadData = useCallback(async (filters = {}) => {
         setLoading(true);
         try {
-            const url = new URL(`${backEndUrl}/tms/listbundle`);
-            if (cPoint) url.searchParams.set("checkpoint", cPoint);
-            if (cPointSecond) url.searchParams.set("checkpoint_second", cPointSecond);
-            if (searchVal) url.searchParams.set("bundle_no", searchVal);
+            const params = new URLSearchParams();
+            params.append("checkpoint", cPoint || "");
+            if (cPointSecond) params.append("checkpoint_second", cPointSecond);
 
-            const res = await fetch(url, { credentials: "include" });
+            // Menggunakan bundleSearch dari state atau parameter
+            params.append("bundle_no", filters.bundle || bundleSearch || "");
+            if (filters.sj) params.append("sj_no", filters.sj);
+            if (filters.driver) params.append("driver", filters.driver);
+            if (filters.startDate) params.append("start_date", filters.startDate);
+            if (filters.endDate) params.append("end_date", filters.endDate);
+
+            const res = await fetch(`${backEndUrl}/tms/listbundle?${params.toString()}`, {
+                credentials: "include",
+            });
             const json = await res.json();
-
-            // Mapping agar aman
-            const mapped = json.data.map(item => ({
-                key: item.adw_handover_group_id,
-                ...item
-            }));
-
-            setData(mapped);
+            setData(json.data.map((item) => ({ key: item.adw_handover_group_id, ...item })));
         } catch (err) {
-            console.error("Error fetching:", err);
-            Toast.show({ content: 'Gagal load data', icon: 'fail' });
+            console.log(err);
+
+            Toast.show({ content: "Gagal load data", icon: "fail" });
         } finally {
             setLoading(false);
         }
-    };
-
-    // --- FETCH DETAIL SJ (On Expand) ---
-    const loadSJ = async (bundleId) => {
-        if (sjData[bundleId]) return; // Jika sudah ada di cache, skip
-
-        try {
-            const res = await fetch(`${backEndUrl}/tms/listbundle/${bundleId}/sj`, { credentials: "include" });
-            const json = await res.json();
-
-            setSjData(prev => ({
-                ...prev,
-                [bundleId]: json.data
-            }));
-        } catch (error) {
-            console.error(error);
-        }
-    };
+    }, [cPoint, cPointSecond, bundleSearch]);
 
     useEffect(() => {
         loadData();
-    }, []);
+    }, [loadData]);
 
-    // --- PDF PRINT LOGIC ---
-    const handlePrint = async (e, record) => {
-        e.stopPropagation(); // Stop expand collapse
-
-        const isWaiting = !record.received || record.received === "-";
-        if (isWaiting) {
-            Toast.show('Dokumen belum diterima (Waiting Receipt)');
-            return;
-        }
-        if (!record.attachment) {
-            Toast.show('File PDF tidak ditemukan');
-            return;
-        }
-
+    const loadSJ = async (bundleId) => {
+        if (sjData[bundleId]) return;
         try {
-            setProcessingPdf(true);
-            Toast.show({ icon: 'loading', content: 'Processing PDF...', duration: 0 });
+            const res = await fetch(`${backEndUrl}/tms/listbundle/${bundleId}/sj`, { credentials: "include" });
+            const json = await res.json();
+            setSjData((prev) => ({ ...prev, [bundleId]: json.data }));
+        } catch (error) { console.error(error); }
+    };
 
-            const staticUrl = `${backEndUrlAttachment}/files/handover/${record.attachment}`;
-            const response = await fetch(staticUrl);
-            if (!response.ok) throw new Error("Gagal download PDF");
+    const handleApplyFilter = () => {
+        setIsFilterOpen(false);
+        loadData({
+            bundle: bundleSearch,
+            sj: sjSearch,
+            driver: driverSearch,
+            startDate: startDate ? dayjs(startDate).format("YYYY-MM-DD") : "",
+            endDate: endDate ? dayjs(endDate).format("YYYY-MM-DD") : "",
+        });
+    };
 
+    const handleResetFilter = () => {
+        setBundleSearch("");
+        setSjSearch("");
+        setDriverSearch("");
+        setStartDate(null);
+        setEndDate(null);
+        setIsFilterOpen(false);
+        loadData({ bundle: "", sj: "", driver: "", startDate: "", endDate: "" });
+    };
+
+    const highlightText = (text, query) => {
+        if (!query || !text) return text;
+        const parts = text.toString().split(new RegExp(`(${query})`, "gi"));
+        return (
+            <span>
+                {parts.map((part, i) =>
+                    part.toLowerCase() === query.toLowerCase()
+                        ? <mark key={i} style={{ backgroundColor: "#ffc069", padding: 0 }}>{part}</mark>
+                        : part
+                )}
+            </span>
+        );
+    };
+
+    const handlePrint = async (e, record) => {
+        e.stopPropagation();
+        if (!record.received || record.received === "-") {
+            return Toast.show("Dokumen belum diterima");
+        }
+        try {
+            setProcessingId(record.key);
+            const response = await fetch(`${backEndUrlAttachment}/files/handover/${record.attachment}`);
             const existingPdfBytes = await response.arrayBuffer();
             const pdfDoc = await PDFDocument.load(existingPdfBytes);
             const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-
-            const pages = pdfDoc.getPages();
-            const firstPage = pages[0];
-            const { height } = firstPage.getSize();
+            const firstPage = pdfDoc.getPages()[0];
             const printDate = dayjs().tz("Asia/Jakarta").format("DD/MM/YYYY HH:mm") + " WIB";
-
-            firstPage.drawText(`Print Date: ${printDate}`, {
-                x: 40, y: height - 15, size: 8, font: helveticaFont, color: rgb(0, 0, 0),
-            });
+            firstPage.drawText(`Print Date: ${printDate}`, { x: 40, y: firstPage.getSize().height - 15, size: 8, font: helveticaFont, color: rgb(0, 0, 0) });
 
             const pdfBytes = await pdfDoc.save();
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-            const objectUrl = URL.createObjectURL(blob);
-
-            setPdfUrl(objectUrl);
+            setPdfUrl(URL.createObjectURL(new Blob([pdfBytes], { type: "application/pdf" })));
             setIsPdfOpen(true);
-            Toast.clear();
-
         } catch (error) {
-            console.error(error);
-            Toast.show({ content: 'Gagal proses PDF', icon: 'fail' });
+            console.log(error);
+
+            Toast.show({ content: "Gagal proses PDF", icon: "fail" });
         } finally {
-            setProcessingPdf(false);
+            setProcessingId(null);
         }
     };
 
     return (
-        <div>
-            <div style={{ padding: '0 12px 12px' }}>
-                <SearchBar
-                    placeholder="Cari Bundle No..."
-                    value={bundleSearch}
-                    onChange={val => {
-                        setBundleSearch(val);
-                        if (!val) loadData(""); // Reset saat kosong
-                    }}
-                    onSearch={() => loadData(bundleSearch)}
-                />
+        <div style={{ background: "#f5f5f5", minHeight: "100vh", paddingBottom: 20 }}>
+            {/* Search Header */}
+            <div style={{ background: "#fff", padding: "12px", position: "sticky", top: 0, zIndex: 10, boxShadow: "0 2px 6px rgba(0,0,0,0.05)" }}>
+                <Flex align="center">
+                    <div style={{ flex: 1, marginRight: 8 }}>
+                        <SearchBar
+                            placeholder="Cari Bundle..."
+                            value={bundleSearch}
+                            onChange={setBundleSearch}
+                            onSearch={handleApplyFilter}
+                        />
+                    </div>
+                    <Button
+                        onClick={() => setIsFilterOpen(true)}
+                        color="primary"
+                        fill="none"
+                        style={{ fontSize: 22, padding: 0 }}
+                    >
+                        <FilterOutline />
+                    </Button>
+                </Flex>
             </div>
 
-            {loading ? <AutoCenter>
-                <SpinLoading color='primary' />
-            </AutoCenter> : (
-                <div style={{ padding: '0 12px' }}>
+            {loading && data.length === 0 ? (
+                <AutoCenter style={{ marginTop: 50 }}><SpinLoading color="primary" /></AutoCenter>
+            ) : (
+                <div style={{ padding: "12px" }}>
                     {data.map((item) => {
                         const isWaiting = !item.received || item.received === "-";
-
                         return (
-                            <Card key={item.key} style={{ marginBottom: 12, borderRadius: 8 }}>
-                                {/* Header Card */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                                    <div style={{ fontWeight: 'bold', fontSize: 16 }}>{item.documentno}</div>
-                                    <Tag color={isWaiting ? 'warning' : 'success'}>
-                                        {isWaiting ? 'Waiting' : 'Completed'}
+                            <Card key={item.key} style={{ marginBottom: 12, borderRadius: 12, border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.03)" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                                    <div style={{ fontWeight: "bold", fontSize: 17, color: "#333" }}>
+                                        {highlightText(item.documentno, bundleSearch)}
+                                    </div>
+                                    <Tag color={isWaiting ? "warning" : "success"} style={{ borderRadius: 6 }}>
+                                        {isWaiting ? "Waiting" : "Completed"}
                                     </Tag>
                                 </div>
 
-                                {/* Info Body */}
-                                <div style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span>To: {item.toactor}</span>
-                                        <span>Total: {item.total_shipments} SJ</span>
+                                <div style={{ fontSize: 13, color: "#777", lineHeight: "1.8" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                        <span>Tujuan: <b>{item.toactor}</b></span>
+                                        <span>Total: <b>{item.total_shipments} SJ</b></span>
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between" }}>
                                         <span>Handover: {formatDate(item.created)}</span>
-                                        <span>Receipt: {formatDate(item.received)}</span>
+                                        <span>Diterima: {formatDate(item.received)}</span>
                                     </div>
                                 </div>
 
-                                {/* Collapse untuk Detail SJ */}
-                                <Collapse onChange={(key) => { if (key.length > 0) loadSJ(item.key) }}>
-                                    <Collapse.Panel key='sj' title={`Lihat Detail SJ (${item.total_shipments})`}>
-                                        <List>
-                                            {sjData[item.key] ? (
-                                                sjData[item.key].map(sj => (
-                                                    <List.Item key={sj.adw_trackingsj_id} style={{ fontSize: 12 }}>
-                                                        <div style={{ fontWeight: 600 }}>{sj.documentno}</div>
-                                                        <div style={{ color: '#888' }}>Driver: {sj.drivername}</div>
-                                                    </List.Item>
-                                                ))
-                                            ) : (
-                                                <AutoCenter>Loading SJ...</AutoCenter>
-                                            )}
-                                        </List>
-                                    </Collapse.Panel>
-                                </Collapse>
+                                <div style={{ marginTop: 10 }}>
+                                    <Collapse onChange={(key) => key.length > 0 && loadSJ(item.key)}>
+                                        <Collapse.Panel key="sj" title={<span style={{ fontSize: 13, color: "#1677ff" }}>Detail Surat Jalan</span>}>
+                                            <List style={{ "--font-size": "13px" }}>
+                                                {sjData[item.key] ? (
+                                                    sjData[item.key].map((sj) => (
+                                                        <List.Item key={sj.adw_trackingsj_id} description={`Driver: ${sj.drivername ? sj.drivername : '-'}`}>
+                                                            {highlightText(sj.documentno, sjSearch)}
+                                                        </List.Item>
+                                                    ))
+                                                ) : (
+                                                    <div style={{ textAlign: "center", padding: 10 }}><SpinLoading size="small" /></div>
+                                                )}
+                                            </List>
+                                        </Collapse.Panel>
+                                    </Collapse>
+                                </div>
 
-                                {/* Footer Action */}
-                                <div style={{ borderTop: '1px solid #eee', marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                                <div style={{ borderTop: "1px solid #f0f0f0", marginTop: 10, paddingTop: 10, textAlign: "right" }}>
                                     <Button
-                                        size="small"
+                                        size="middle"
                                         color="primary"
                                         fill="outline"
-                                        disabled={isWaiting || processingPdf}
+                                        loading={processingId === item.key}
+                                        disabled={isWaiting || (processingId !== null && processingId !== item.key)}
                                         onClick={(e) => handlePrint(e, item)}
+                                        style={{ borderRadius: 8 }}
                                     >
-                                        <PrinterOutlined />
+                                        <PrinterOutlined /> Cetak
                                     </Button>
                                 </div>
                             </Card>
-                        )
+                        );
                     })}
-                    {data.length === 0 && <AutoCenter>Tidak ada data.</AutoCenter>}
+                    {data.length === 0 && <AutoCenter style={{ color: "#999", marginTop: 40 }}>Data tidak ditemukan</AutoCenter>}
                 </div>
             )}
 
-            {/* PDF Viewer Popup */}
+            {/* Advanced Filter Popup */}
+            <Popup
+                visible={isFilterOpen}
+                onMaskClick={() => setIsFilterOpen(false)}
+                position="right"
+                bodyStyle={{ width: "80vw" }}
+            >
+                <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                    <div style={{ padding: 16, borderBottom: "1px solid #eee", fontWeight: "bold", fontSize: 18 }}>
+                        Filter Lanjutan
+                    </div>
+                    <div style={{ flex: 1, overflowY: "auto", padding: "0 16px" }}>
+                        <Form layout="vertical">
+                            <Form.Item label="Nomor Surat Jalan (SJ)">
+                                <Input placeholder="Masukkan No SJ" value={sjSearch} onChange={setSjSearch} />
+                            </Form.Item>
+                            <Form.Item label="Nama Driver">
+                                <Input placeholder="Masukkan Nama Driver" value={driverSearch} onChange={setDriverSearch} />
+                            </Form.Item>
+                            <Form.Item label="Tanggal Mulai">
+                                <Button onClick={() => setPickerStartVisible(true)} fill="outline" block style={{ textAlign: "left" }}>
+                                    {startDate ? dayjs(startDate).format("DD/MM/YYYY") : "Pilih Tanggal"}
+                                </Button>
+                                <DatePicker
+                                    visible={pickerStartVisible}
+                                    onClose={() => setPickerStartVisible(false)}
+                                    onConfirm={setStartDate}
+                                />
+                            </Form.Item>
+                            <Form.Item label="Tanggal Akhir">
+                                <Button onClick={() => setPickerEndVisible(true)} fill="outline" block style={{ textAlign: "left" }}>
+                                    {endDate ? dayjs(endDate).format("DD/MM/YYYY") : "Pilih Tanggal"}
+                                </Button>
+                                <DatePicker
+                                    visible={pickerEndVisible}
+                                    onClose={() => setPickerEndVisible(false)}
+                                    onConfirm={setEndDate}
+                                />
+                            </Form.Item>
+                        </Form>
+                    </div>
+                    <div style={{ padding: 16, borderTop: "1px solid #eee" }}>
+                        <Space block direction="vertical">
+                            <Button color="primary" block onClick={handleApplyFilter}>Terapkan Filter</Button>
+                            <Button block onClick={handleResetFilter} fill="none" color="weak">Reset Semua</Button>
+                        </Space>
+                    </div>
+                </div>
+            </Popup>
+
+            {/* PDF View Popup */}
             <Popup
                 visible={isPdfOpen}
                 onMaskClick={() => setIsPdfOpen(false)}
-                bodyStyle={{ height: '90vh', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}
+                bodyStyle={{ height: "95vh", borderTopLeftRadius: 16, borderTopRightRadius: 16 }}
             >
-                <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: 12, borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ fontWeight: 'bold' }}>Preview PDF</span>
-                        <Button size="mini" onClick={() => setIsPdfOpen(false)}>Close</Button>
+                <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+                    <div style={{ padding: 12, borderBottom: "1px solid #eee", textAlign: "right" }}>
+                        <Button size="small" fill="none" onClick={() => setIsPdfOpen(false)} color="primary">Selesai</Button>
                     </div>
-                    {pdfUrl && (
-                        <iframe src={pdfUrl} style={{ width: '100%', flex: 1, border: 'none' }} title="PDF" />
-                    )}
+                    <iframe src={pdfUrl} style={{ width: "100%", flex: 1, border: "none" }} />
                 </div>
             </Popup>
         </div>

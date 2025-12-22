@@ -4617,50 +4617,79 @@ class TMS {
     }
   }
 
-  async listBundle(server, checkpoint, checkpoint_second = 99, bundle_no = "") {
+  async listBundle(server, checkpoint, checkpoint_second = 99, bundle_no = "", sj_no = "", driver = "", start_date = "", end_date = "") {
     let dbClient;
 
     try {
       dbClient = await server.pg.connect();
 
-      // Base query
+      // Menggunakan CTE (Common Table Expression) agar logic filter SJ tidak mengganggu perhitungan total count
       let queryBundle = `
             SELECT
                 hg.*,
-                COUNT(tsj.adw_trackingsj_id) AS total_shipments
+                (SELECT COUNT(*) FROM adw_group_sj gs_count WHERE gs_count.adw_handover_group_id = hg.adw_handover_group_id) AS total_shipments
             FROM
                 adw_handover_group hg
-            LEFT JOIN adw_group_sj gs ON gs.adw_handover_group_id = hg.adw_handover_group_id
-            LEFT JOIN adw_trackingsj tsj ON tsj.adw_trackingsj_id = gs.adw_trackingsj_id
             WHERE hg.checkpoint IN ($1, $2)
         `;
 
       const params = [checkpoint, checkpoint_second];
-      let paramIndex = 3; // parameter berikutnya setelah $1 & $2
+      let paramIndex = 3;
 
-      // Jika ada bundle_no, tambahkan filter
+      // 1. Filter Bundle No
       if (bundle_no && bundle_no.trim() !== "") {
         queryBundle += ` AND hg.documentno ILIKE $${paramIndex}`;
         params.push(`%${bundle_no}%`);
         paramIndex++;
       }
 
-      // Final query
-      queryBundle += `
-            GROUP BY hg.adw_handover_group_id
-            ORDER BY hg.created DESC
-        `;
+      // 2. Filter SJ No (Mencari Bundle yang berisi SJ tersebut)
+      if (sj_no && sj_no.trim() !== "") {
+        queryBundle += ` AND EXISTS (
+                SELECT 1 FROM adw_group_sj gs 
+                JOIN adw_trackingsj tsj ON tsj.adw_trackingsj_id = gs.adw_trackingsj_id
+                WHERE gs.adw_handover_group_id = hg.adw_handover_group_id 
+                AND tsj.documentno ILIKE $${paramIndex}
+            )`;
+        params.push(`%${sj_no}%`);
+        paramIndex++;
+      }
+
+      // 3. Filter Driver (Mencari Bundle yang dibawa Driver tersebut)
+      if (driver && driver.trim() !== "") {
+        queryBundle += ` AND EXISTS (
+                SELECT 1 FROM adw_group_sj gs 
+                JOIN adw_trackingsj tsj ON tsj.adw_trackingsj_id = gs.adw_trackingsj_id
+                WHERE gs.adw_handover_group_id = hg.adw_handover_group_id 
+                AND tsj.drivername ILIKE $${paramIndex}
+            )`;
+        params.push(`%${driver}%`);
+        paramIndex++;
+      }
+
+      // 4. Filter Tanggal (Date Range)
+      if (start_date && start_date !== "") {
+        queryBundle += ` AND hg.created::date >= $${paramIndex}`;
+        params.push(start_date);
+        paramIndex++;
+      }
+      if (end_date && end_date !== "") {
+        queryBundle += ` AND hg.created::date <= $${paramIndex}`;
+        params.push(end_date);
+        paramIndex++;
+      }
+
+      // Final sorting
+      queryBundle += ` ORDER BY hg.created DESC`;
 
       const resBundleRows = await dbClient.query(queryBundle, params);
-
       return resBundleRows.rows;
+
     } catch (error) {
-      console.log("Error querying list bundle:", error);
-      return;
+      console.error("Error querying list bundle:", error);
+      throw error;
     } finally {
-      if (dbClient) {
-        await dbClient.release();
-      }
+      if (dbClient) await dbClient.release();
     }
   }
 

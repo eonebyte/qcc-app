@@ -1,9 +1,29 @@
 export default async (server, opts) => {
     server.get('/listbundle', async (request, reply) => {
         try {
-            const { checkpoint, checkpoint_second, bundle_no } = request.query;
+            // Tangkap semua parameter dari frontend
+            const {
+                checkpoint,
+                checkpoint_second,
+                bundle_no,
+                sj_no,
+                driver,
+                start_date,
+                end_date
+            } = request.query;
 
-            const list_bundle = await server.tms.listBundle(server, checkpoint, checkpoint_second, bundle_no);
+            // Kirim semua parameter ke model
+            const list_bundle = await server.tms.listBundle(
+                server,
+                checkpoint,
+                checkpoint_second,
+                bundle_no,
+                sj_no,
+                driver,
+                start_date,
+                end_date
+            );
+
             reply.send({ message: 'fetch successfully', data: list_bundle });
         } catch (error) {
             request.log.error(error);
@@ -11,11 +31,12 @@ export default async (server, opts) => {
         }
     });
 
+
     server.get("/listbundle/:id/sj", async (req, reply) => {
         const bundleId = req.params.id;
 
         console.log('b id : ', bundleId);
-        
+
         const data = await server.tms.listBundleSJ(server, bundleId);
         return reply.send({ data });
     });

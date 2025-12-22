@@ -29,7 +29,7 @@ const items = [
         key: "/outstanding",
         label: "Outstanding",
         icon: <FileExclamationOutlined />,
-        roles: ['delivery', 'dpk', 'fat', 'marketing']
+        roles: ['delivery', 'dpk', 'fat', 'marketing', 'admin']
     },
     {
         key: "/receipt",
@@ -39,35 +39,35 @@ const items = [
             {
                 key: '/receipt/delivery/from/dpk',
                 label: 'from DPK',
-                roles: ['delivery']
+                roles: ['delivery', 'admin']
             },
             {
                 key: '/receipt/dpk/from/delivery',
                 label: 'from Delivery',
-                roles: ['dpk']
+                roles: ['dpk', 'admin']
             },
             {
                 key: '/receipt/dpk/from/driver',
                 label: 'from Driver',
-                roles: ['dpk']
+                roles: ['dpk', 'admin']
             },
             {
                 key: '/receipt/driver/from/dpk',
                 label: 'from DPK',
-                roles: ['driver']
+                roles: ['driver', 'admin']
             },
             {
                 key: '/receipt/mkt/from/delivery',
                 label: 'from Delivery',
-                roles: ['marketing']
+                roles: ['marketing', 'admin']
             },
             {
                 key: '/receipt/fat/from/mkt',
                 label: 'from Marketing',
-                roles: ['fat']
+                roles: ['fat', 'admin']
             },
         ],
-        roles: ['delivery', 'dpk', 'driver', 'fat', 'marketing']
+        roles: ['delivery', 'dpk', 'driver', 'fat', 'marketing', 'admin']
     },
     {
         key: "/list/handover",
@@ -77,52 +77,52 @@ const items = [
             {
                 key: '/handover/delivery/to/dpk',
                 label: 'to DPK',
-                roles: ['delivery']
+                roles: ['delivery', 'admin']
             },
             {
                 key: '/handover/delivery/to/mkt',
                 label: 'to MKT',
-                roles: ['delivery']
+                roles: ['delivery', 'admin']
             },
             {
                 key: '/handover/dpk/to/driver',
                 label: 'to Driver',
-                roles: ['dpk']
+                roles: ['dpk', 'admin']
             },
             {
                 key: '/handover/dpk/to/delivery',
                 label: 'to Delivery',
-                roles: ['dpk']
+                roles: ['dpk', 'admin']
             },
             {
                 key: '/handover/checkin/customer',
                 label: 'Check Out',
-                roles: ['driver']
+                roles: ['driver', 'admin']
             },
             {
                 key: '/handover/checkout/droponly',
                 label: 'Drop Only',
-                roles: ['driver']
+                roles: ['driver', 'admin']
             },
             {
                 key: '/handover/mkt/to/fat',
                 label: 'to FAT',
-                roles: ['marketing']
+                roles: ['marketing', 'admin']
             },
         ],
-        roles: ['delivery', 'dpk', 'driver', 'marketing']
+        roles: ['delivery', 'dpk', 'driver', 'marketing', 'admin']
     },
     {
         key: "/history",
         label: "History",
         icon: <HistoryOutlined />,
-        roles: ['delivery', 'dpk', 'driver', 'marketing', 'fat']
+        roles: ['delivery', 'dpk', 'driver', 'marketing', 'fat', 'admin']
     },
     {
         key: "/progress-shipment",
         label: "Progress Shipment",
         icon: <FieldTimeOutlined />,
-        roles: ['delivery', 'dpk', 'fat', 'marketing', 'driver']
+        roles: ['delivery', 'dpk', 'fat', 'marketing', 'driver', 'admin']
     },
     {
         key: "5",
