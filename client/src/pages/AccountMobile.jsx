@@ -19,10 +19,10 @@ import {
   RightOutline,
   KeyOutline,
   EditSOutline, // Icon baru untuk edit username
-} from "antd-mobile-icons"; 
+} from "antd-mobile-icons";
 import { LogoutOutlined } from '@ant-design/icons';
 
-import axios from "axios"; 
+import axios from "axios";
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
@@ -32,12 +32,12 @@ import { logout } from "../states/reducers/authSlice";
 const AccountMobile = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  
+
   // --- STATE ---
   const [isPassModalVisible, setIsPassModalVisible] = useState(false);
   const [isUserModalVisible, setIsUserModalVisible] = useState(false); // State Modal Username
 
-  const [formPass] = Form.useForm(); 
+  const [formPass] = Form.useForm();
   const [formUser] = Form.useForm(); // Form Instance Username
 
   const { user, isLoading } = useSelector((state) => state.auth);
@@ -50,8 +50,8 @@ const AccountMobile = () => {
       return;
     }
     try {
-      const response = await axios.post(`${backEndUrl}/auth/change-password`, { 
-        newPassword 
+      const response = await axios.post(`${backEndUrl}/auth/change-password`, {
+        newPassword
       }, { withCredentials: true });
 
       if (response.data.success) {
@@ -68,19 +68,19 @@ const AccountMobile = () => {
   const handleSubmitUsername = async (values) => {
     const { newUsername } = values;
     try {
-      const response = await axios.post(`${backEndUrl}/auth/change-username`, { 
-        newUsername 
+      const response = await axios.post(`${backEndUrl}/auth/change-username`, {
+        newUsername
       }, { withCredentials: true });
 
       if (response.data.success) {
         Toast.show({ icon: 'success', content: 'Username berhasil diganti!' });
         setIsUserModalVisible(false);
         formUser.resetFields();
-        
+
         // Refresh halaman agar Redux state / Tampilan Header terupdate
         // Atau jika Anda punya action updateProfile, dispatch di sini.
         setTimeout(() => {
-            window.location.reload();
+          window.location.reload();
         }, 1000);
       }
     } catch (error) {
@@ -118,7 +118,7 @@ const AccountMobile = () => {
     return (
       <LayoutGlobalMobile title="Akun Saya">
         <AutoCenter style={{ marginTop: 50 }}>
-            <Button color="primary" onClick={() => navigate("/")}>Login</Button>
+          <Button color="primary" onClick={() => navigate("/")}>Login</Button>
         </AutoCenter>
       </LayoutGlobalMobile>
     );
@@ -164,24 +164,24 @@ const AccountMobile = () => {
 
       <Card style={{ borderRadius: 12 }}>
         <List header="Pengaturan">
-          
+
           {/* MENU UBAH USERNAME */}
-          <List.Item 
-            prefix={<EditSOutline />} 
+          <List.Item
+            prefix={<EditSOutline />}
             onClick={() => {
-                // Set initial value form dengan username saat ini
-                formUser.setFieldsValue({ newUsername: user?.value || user?.username });
-                setIsUserModalVisible(true);
-            }} 
+              // Set initial value form dengan username saat ini
+              formUser.setFieldsValue({ newUsername: user?.value || user?.username });
+              setIsUserModalVisible(true);
+            }}
             clickable
           >
             Ubah Username
           </List.Item>
 
           {/* MENU UBAH PASSWORD */}
-          <List.Item 
-            prefix={<KeyOutline />} 
-            onClick={() => setIsPassModalVisible(true)} 
+          <List.Item
+            prefix={<KeyOutline />}
+            onClick={() => setIsPassModalVisible(true)}
             clickable
           >
             Ubah Password
@@ -245,14 +245,14 @@ const AccountMobile = () => {
             <div style={{ marginBottom: 15, fontSize: 12, color: '#666', background: '#f5f5f5', padding: 8, borderRadius: 4 }}>
               Username digunakan untuk Login. Pastikan unik dan tidak mengandung spasi.
             </div>
-            <Form.Item 
-                label="Username Baru" 
-                name="newUsername" 
-                rules={[
-                    { required: true, message: 'Harap isi username' },
-                    { min: 3, message: 'Minimal 3 karakter' },
-                    { pattern: /^\S*$/, message: 'Tidak boleh ada spasi' }
-                ]}
+            <Form.Item
+              label="Username Baru"
+              name="newUsername"
+              rules={[
+                { required: true, message: 'Harap isi username' },
+                { min: 3, message: 'Minimal 3 karakter' },
+                { pattern: /^\S*$/, message: 'Tidak boleh ada spasi' }
+              ]}
             >
               <Input placeholder="Masukkan username baru" clearable />
             </Form.Item>

@@ -117,7 +117,7 @@ export default async function (fastify, options) {
                 title: u.TITLE,
               };
             }
-          } catch (e) {}
+          } catch (e) { }
         }
 
         if (userDetail) {
@@ -166,7 +166,7 @@ export default async function (fastify, options) {
             };
             source = "oracle";
           }
-        } catch (e) {}
+        } catch (e) { }
       }
 
       if (userFound) {
@@ -223,7 +223,7 @@ export default async function (fastify, options) {
       if (oracleConn)
         try {
           await oracleConn.close();
-        } catch (e) {}
+        } catch (e) { }
     }
   });
 
@@ -260,222 +260,148 @@ export default async function (fastify, options) {
       dbClient.release();
     }
   });
-  
+
+  // 1. CHANGE PASSWORD
   fastify.post("/change-password", async (request, reply) => {
-      // Ambil User ID dari session yang sedang login
-      const userSession = request.session.get("user");
-      
-      console.log('userSession:', userSession);
-      
-      if (!userSession || !userSession.ad_user_id) {
-        return reply.code(401).send({ success: false, message: "Unauthorized" });
-      }
-  
-      const { newPassword } = request.body;
-      const userId = userSession.ad_user_id;
-  
-      if (!newPassword || newPassword.length < 3) {
-        return reply.code(400).send({ success: false, message: "Password terlalu pendek." });
-      }
-  
+    const userSession = request.session.get("user");
+    if (!userSession || !userSession.ad_user_id) {
+      return reply.code(401).send({ success: false, message: "Unauthorized" });
+    }
+
+    const { newPassword } = request.body;
+    const userId = Number(userSession.ad_user_id);
+    const userTitle = String(userSession.title).toLowerCase(); // Ambil title (driver/staff)
+
+    if (!newPassword || newPassword.length < 3) {
+      return reply.code(400).send({ success: false, message: "Password minimal 3 karakter." });
+    }
+
+    let updated = false;
+    let sourceDB = "";
+
+    // --- LOGIKA ROUTING BERDASARKAN TITLE ---
+    if (userTitle === "driver") {
+      // KHUSUS DRIVER -> KE ORACLE
       let oracleConn;
-      const dbClient = await fastify.pg.connect();
-      let updated = false;
-      let sourceDB = "";
-  
       try {
-        // --- LANGKAH 1: CEK & UPDATE DI ORACLE ---
+        oracleConn = await oracleDB.openConnection();
+        const result = await oracleConn.execute(
+          `UPDATE AD_User SET Password = :p, Updated = SYSDATE WHERE AD_USER_ID = :id`,
+          { p: newPassword, id: userId },
+          { autoCommit: true }
+        );
+        if (result.rowsAffected > 0) {
+          updated = true;
+          sourceDB = "Oracle";
+        }
+      } catch (err) {
+        fastify.log.error(err);
+        return reply.code(500).send({ success: false, message: "Gagal update Oracle." });
+      } finally {
+        if (oracleConn) await oracleConn.close();
+      }
+    } else {
+      // SELAIN DRIVER -> KE POSTGRES
+      const dbClient = await fastify.pg.connect();
+      try {
+        const pgRes = await dbClient.query(
+          `UPDATE AD_User SET password = $1, updated = NOW() WHERE ad_user_id::numeric = $2`,
+          [newPassword, userId]
+        );
+        if (pgRes.rowCount > 0) {
+          updated = true;
+          sourceDB = "Postgres";
+        }
+      } finally {
+        dbClient.release();
+      }
+    }
+
+    if (updated) {
+      return reply.send({ success: true, message: `Password berhasil diubah di ${sourceDB}` });
+    } else {
+      return reply.code(404).send({ success: false, message: "User tidak ditemukan." });
+    }
+  });
+
+  // 2. CHANGE USERNAME
+  fastify.post("/change-username", async (request, reply) => {
+    const userSession = request.session.get("user");
+    if (!userSession || !userSession.ad_user_id) {
+      return reply.code(401).send({ success: false, message: "Unauthorized" });
+    }
+
+    const { newUsername } = request.body;
+    const userId = Number(userSession.ad_user_id);
+    const userTitle = String(userSession.title).toLowerCase();
+    const oldUsername = userSession.name;
+
+    if (!newUsername || newUsername.length < 3 || /\s/.test(newUsername)) {
+      return reply.code(400).send({ success: false, message: "Username tidak valid." });
+    }
+
+    let updated = false;
+    let sourceDB = "";
+    const dbClient = await fastify.pg.connect(); // Tetap butuh PG untuk update tabel PIN
+
+    try {
+      // --- LANGKAH 0: CEK DUPLIKAT GLOBAL (Opsional tapi disarankan) ---
+      // Cek di Postgres agar tidak bentrok dengan staff
+      const pgDup = await dbClient.query(`SELECT ad_user_id FROM AD_User WHERE name = $1 AND ad_user_id::numeric != $2`, [newUsername, userId]);
+      if (pgDup.rowCount > 0) return reply.code(400).send({ success: false, message: "Username sudah dipakai staff lain." });
+
+      // --- LANGKAH 1: UPDATE BERDASARKAN TITLE ---
+      if (userTitle === "driver") {
+        let oracleConn;
         try {
           oracleConn = await oracleDB.openConnection();
-          
-          // Cek apakah user dengan ID ini ada di Oracle
-          const checkOracle = await oracleConn.execute(
-            `SELECT AD_USER_ID FROM AD_User WHERE AD_USER_ID = :id`,
-            { id: userId },
-            { outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT }
+          const result = await oracleConn.execute(
+            `UPDATE AD_User SET Value = :name, Updated = SYSDATE WHERE AD_USER_ID = :id`,
+            { name: newUsername, id: userId },
+            { autoCommit: true }
           );
-  
-          if (checkOracle.rows.length > 0) {
-            // Jika ada, Lakukan Update di Oracle
-            await oracleConn.execute(
-              `UPDATE AD_User SET Password = :p, Updated = SYSDATE WHERE AD_USER_ID = :id`,
-              { p: newPassword, id: userId },
-              { autoCommit: true } // Pastikan autoCommit true agar tersimpan
-            );
+          if (result.rowsAffected > 0) {
             updated = true;
             sourceDB = "Oracle";
           }
-        } catch (oraErr) {
-          fastify.log.error("Oracle Error: " + oraErr.message);
-          // Jangan return error dulu, lanjut cek ke Postgres (sesuai logika fallback)
+        } finally {
+          if (oracleConn) await oracleConn.close();
         }
-  
-        // --- LANGKAH 2: JIKA TIDAK UPDATE DI ORACLE, CEK POSTGRES ---
-        if (!updated) {
-          // Cek apakah user ada di Postgres (bisa langsung update, jika rowCount > 0 berarti ada)
-          const pgRes = await dbClient.query(
-            `UPDATE AD_User SET password = $1, updated = NOW() WHERE ad_user_id = $2 RETURNING ad_user_id`,
-            [newPassword, userId]
-          );
-  
-          if (pgRes.rowCount > 0) {
-            updated = true;
-            sourceDB = "Postgres";
-          }
-        }
-  
-        // --- HASIL AKHIR ---
-        if (updated) {
-          return reply.send({ 
-            success: true, 
-            message: `Password berhasil diubah (Source: ${sourceDB})` 
-          });
-        } else {
-          return reply.code(404).send({ 
-            success: false, 
-            message: "User ID tidak ditemukan di database manapun." 
-          });
-        }
-  
-      } catch (error) {
-        fastify.log.error(error);
-        return reply.code(500).send({ success: false, message: "Gagal mengubah password." });
-      } finally {
-        dbClient.release();
-        if (oracleConn) {
-          try {
-            await oracleConn.close();
-          } catch (e) {}
-        }
-      }
-    });
-  
-  fastify.post("/change-username", async (request, reply) => {
-      const userSession = request.session.get("user");
-      
-      // 1. Validasi Login
-      if (!userSession || !userSession.ad_user_id) {
-        return reply.code(401).send({ success: false, message: "Unauthorized" });
-      }
-  
-      const { newUsername } = request.body;
-      const userId = userSession.ad_user_id;
-  
-      // 2. Validasi Input
-      if (!newUsername || newUsername.length < 3) {
-        return reply.code(400).send({ success: false, message: "Username minimal 3 karakter." });
-      }
-  
-      // Hindari spasi jika username dijadikan login
-      if (/\s/.test(newUsername)) {
-        return reply.code(400).send({ success: false, message: "Username tidak boleh mengandung spasi." });
-      }
-  
-      let oracleConn;
-      const dbClient = await fastify.pg.connect();
-      let updated = false;
-      let sourceDB = "";
-  
-      try {
-        // --- LANGKAH 0: CEK DUPLIKASI (PENTING) ---
-        // Kita tidak ingin user mengganti nama menjadi nama yang sudah dipakai orang lain.
-        
-        // Cek Duplikat di Postgres
-        const checkPgDup = await dbClient.query(
-          `SELECT ad_user_id FROM AD_User WHERE name = $1 AND ad_user_id != $2`,
+      } else {
+        const pgRes = await dbClient.query(
+          `UPDATE AD_User SET name = $1, updated = NOW() WHERE ad_user_id::numeric = $2`,
           [newUsername, userId]
         );
-        if (checkPgDup.rowCount > 0) {
-          return reply.code(400).send({ success: false, message: "Username sudah digunakan (PG)." });
-        }
-  
-        // Cek Duplikat di Oracle
-        try {
-          oracleConn = await oracleDB.openConnection();
-          const checkOraDup = await oracleConn.execute(
-            `SELECT AD_USER_ID FROM AD_User WHERE value = :name AND AD_USER_ID != :id`,
-            { name: newUsername, id: userId }
-          );
-          if (checkOraDup.rows.length > 0) {
-             return reply.code(400).send({ success: false, message: "Username sudah digunakan (Oracle)." });
-          }
-        } catch (e) {
-          // Abaikan error koneksi oracle saat cek duplikat, lanjut ke update logic
-        }
-  
-        // --- LANGKAH 1: CEK & UPDATE DI ORACLE ---
-        try {
-          if(!oracleConn) oracleConn = await oracleDB.openConnection();
-  
-          // Cek User ID Exist di Oracle?
-          const checkUserOra = await oracleConn.execute(
-            `SELECT AD_USER_ID FROM AD_User WHERE AD_USER_ID = :id`,
-            { id: userId }
-          );
-  
-          if (checkUserOra.rows.length > 0) {
-            // Lakukan Update
-            await oracleConn.execute(
-              `UPDATE AD_User SET Value = :name, Updated = SYSDATE WHERE AD_USER_ID = :id`,
-              { name: newUsername, id: userId },
-              { autoCommit: true }
-            );
-            updated = true;
-            sourceDB = "Oracle";
-          }
-        } catch (oraErr) {
-          fastify.log.error("Oracle Update Error: " + oraErr.message);
-        }
-  
-        // --- LANGKAH 2: JIKA TIDAK UPDATE DI ORACLE, CEK POSTGRES ---
-        if (!updated) {
-          // Cek & Update di Postgres
-          const pgRes = await dbClient.query(
-            `UPDATE AD_User SET name = $1, updated = NOW() WHERE ad_user_id = $2 RETURNING ad_user_id`,
-            [newUsername, userId]
-          );
-  
-          if (pgRes.rowCount > 0) {
-            updated = true;
-            sourceDB = "Postgres";
-          }
-        }
-  
-        // --- HASIL AKHIR ---
-        if (updated) {
-          // Update Session agar tidak perlu logout
-          userSession.name = newUsername;
-          userSession.username = newUsername; // jaga-jaga jika pakai properti ini
-          request.session.set("user", userSession);
-  
-          // Jika user pakai PIN (Mobile), update juga tabel mapping PIN agar sinkron
-          await dbClient.query(
-            `UPDATE adw_employee_pin SET username = $1 WHERE ad_user_id = $2`,
-            [newUsername, userId]
-          );
-  
-          return reply.send({ 
-            success: true, 
-            message: `Username berhasil diubah menjadi ${newUsername}`,
-            newUsername: newUsername 
-          });
-        } else {
-          return reply.code(404).send({ 
-            success: false, 
-            message: "User ID tidak ditemukan." 
-          });
-        }
-  
-      } catch (error) {
-        fastify.log.error(error);
-        return reply.code(500).send({ success: false, message: "Server error saat ubah username." });
-      } finally {
-        dbClient.release();
-        if (oracleConn) {
-          try { await oracleConn.close(); } catch (e) {}
+        if (pgRes.rowCount > 0) {
+          updated = true;
+          sourceDB = "Postgres";
         }
       }
-    });
+
+      // --- LANGKAH 2: FINALIZE (Sync Session & Tabel PIN) ---
+      if (updated) {
+        // Sinkronisasi tabel PIN (PENTING: Semua user baik driver/staff datanya ada di sini untuk Mobile Login)
+        await dbClient.query(
+          `UPDATE adw_employee_pin SET username = $1 WHERE ad_user_id::numeric = $2 OR username = $3`,
+          [newUsername, userId, oldUsername]
+        );
+
+        // Update Session
+        userSession.name = newUsername;
+        request.session.set("user", userSession);
+
+        return reply.send({ success: true, message: `Username diubah (${sourceDB})`, newUsername });
+      }
+
+      return reply.code(404).send({ success: false, message: "User tidak ditemukan." });
+
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.code(500).send({ success: false, message: "Internal Server Error" });
+    } finally {
+      dbClient.release();
+    }
+  });
 
   // 4. LOGOUT
   // fastify.post("/logout-full", async (request, reply) => {
