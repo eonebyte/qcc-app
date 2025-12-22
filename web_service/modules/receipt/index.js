@@ -1149,7 +1149,8 @@ class Receipt {
       const queryPostgres = `
                 SELECT
                     t.m_inout_id,
-                    t.drivername,
+                    t.drivername drivername,
+                    COALESCE(t.drivername_receipt, t.drivername) drivername_receipt,
                     t.adw_trackingsj_id,
                     t.checkpoin_id,
                     t.tnkb_id,
@@ -1227,6 +1228,7 @@ class Receipt {
         return {
           ...pg,
           drivername: pg.drivername,
+          drivername_receipt: pg.drivername_receipt,
           documentno: sj ? sj.DOCUMENTNO : "N/A",
           customer: sj ? sj.CUSTOMER : "N/A",
           plantime: sj ? sj.PLANTIME : null,
@@ -1252,7 +1254,10 @@ class Receipt {
         });
 
         const groupQuery = `
-                SELECT ahg.adw_handover_group_id, ahg.documentno, ahg.created, ahg.drivername
+                SELECT ahg.adw_handover_group_id, ahg.documentno, 
+                ahg.created, 
+                ahg.drivername,
+                COALESCE(ahg.drivername_receipt, ahg.drivername) drivername_receipt
                 FROM adw_handover_group ahg
                 WHERE adw_handover_group_id = ANY($1::int[])
                 `;
@@ -1263,6 +1268,7 @@ class Receipt {
             bundleNo: row.documentno,
             created: row.created,
             drivername: row.drivername,
+            drivername_receipt: row.drivername_receipt,
             plat_nomor: platByGroup.get(row.adw_handover_group_id) || "N/A" // <-- Dimasukkan di sini
           });
         });
@@ -1283,6 +1289,7 @@ class Receipt {
             bundleNo: info?.bundleNo || "N/A",
             created: info?.created || null,
             drivername: info?.drivername || null,
+            drivername_receipt: info?.drivername_receipt || null,
             plat_nomor: info?.plat_nomor || "N/A", // <-- Muncul di level Header Bundle
             shipments: [],
           };

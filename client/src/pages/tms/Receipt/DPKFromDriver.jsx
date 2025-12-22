@@ -326,7 +326,8 @@ const DPKFromDriver = () => {
       render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
     },
     { title: "Bundle No", dataIndex: "bundleNo", key: "bundleNo" },
-    { title: "Driver", dataIndex: "drivername", key: "drivername" },
+    { title: "Driver Pengirim", dataIndex: "drivername", key: "drivername" },
+    { title: "Driver Penerima", dataIndex: "drivername_receipt", key: "drivername_receipt" },
     { title: "TNKB", dataIndex: "plat_nomor", key: "plat_nomor" },
     {
       title: "Date Handover",

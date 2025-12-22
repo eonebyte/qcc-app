@@ -12,7 +12,7 @@ import {
   SearchBar, // Import SearchBar
   Tag,
 } from "antd-mobile";
-import { CalendarOutline, UserOutline, FileOutline } from "antd-mobile-icons";
+import { CalendarOutline, RightOutline, FileOutline } from "antd-mobile-icons";
 import dayjs from "dayjs";
 import axios from "axios";
 import LayoutGlobalMobile from "../../../components/layouts/LayoutGlobalMobile";
@@ -23,7 +23,7 @@ const DPKFromDriverMobile = () => {
   // --- STATE ---
   const [dataList, setDataList] = useState([]); // Master Data
   const [loading, setLoading] = useState(false);
-  const [activeKey, setActiveKey] = useState([]); 
+  const [activeKey, setActiveKey] = useState([]);
   const [searchText, setSearchText] = useState(""); // State pencarian
 
   // --- FETCH DATA ---
@@ -82,7 +82,7 @@ const DPKFromDriverMobile = () => {
       .map((bundle) => {
         // 1. Cek apakah Bundle No cocok
         const isBundleMatch = bundle.bundleNo.toLowerCase().includes(lowerSearch);
-        
+
         // 2. Cek apakah ada shipment di dalam bundle yang cocok
         const matchingShipments = bundle.shipments.filter((s) =>
           s.documentno.toLowerCase().includes(lowerSearch)
@@ -159,6 +159,8 @@ const DPKFromDriverMobile = () => {
             });
           }
         } catch (error) {
+          console.log(error);
+
           Toast.show({ content: "Error saat reject", icon: "fail" });
         }
       },
@@ -195,6 +197,8 @@ const DPKFromDriverMobile = () => {
             Toast.show({ content: res.data.message || "Gagal", icon: "fail" });
           }
         } catch (error) {
+          console.log(error);
+
           Toast.show({ content: "Error saat submit", icon: "fail" });
         }
       },
@@ -204,74 +208,141 @@ const DPKFromDriverMobile = () => {
   // --- RENDER BUNDLE ITEM ---
   const renderBundle = (bundle) => {
     return (
-      <Collapse.Panel
-        key={bundle.key}
-        title={
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div onClick={(e) => e.stopPropagation()}>
-              <Checkbox
-                checked={bundle.bundleSelected}
-                onChange={() => toggleBundleSelection(bundle.bundleNo)}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: "600", fontSize: 15 }}>{bundle.bundleNo}</div>
-              <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
-                 {bundle.drivername || "Tanpa Driver"} • {bundle.shipments.length} Docs
-              </div>
-            </div>
-          </div>
-        }
-      >
-        <div style={{ background: "#f5f5f5", borderRadius: 8, padding: 8 }}>
-          {bundle.shipments.map((item) => (
-            <Card key={item.key} style={{ marginBottom: 8, borderRadius: 8, borderLeft: '4px solid #1677ff' }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  gap: 8
-                }}
-              >
+      <div key={bundle.key} style={{ marginBottom: 16 }}>
+        <Collapse
+          activeKey={activeKey}
+          onChange={setActiveKey}
+          accordion={false} // Biarkan banyak terbuka sekaligus
+        >
+          <Collapse.Panel
+            key={bundle.key}
+            title={
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: '4px 0' }}>
+                {/* 1. CHECKBOX (Sisi Kiri) */}
+                <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}>
+                  <Checkbox
+                    checked={bundle.bundleSelected}
+                    onChange={() => toggleBundleSelection(bundle.bundleNo)}
+                    style={{ '--size': '20px' }}
+                  />
+                </div>
+
+                {/* 2. KONTEN HEADER */}
                 <div style={{ flex: 1 }}>
-                  {/* UX IMPORVEMENT: Document No Lebih Menonjol */}
-                  <div style={{ 
-                    fontSize: 18, 
-                    fontWeight: "800", 
-                    color: "#1677ff", 
-                    marginBottom: 4,
-                    fontFamily: 'monospace' // Opsional: agar terlihat seperti kode
+                  {/* Baris Atas: Nomor Bundle & Tag Jumlah */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontWeight: "700", fontSize: 16, color: '#1a1a1a' }}>
+                      {bundle.bundleNo}
+                    </span>
+                    <Tag color='primary' fill='outline' style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px' }}>
+                      {bundle.shipments.length} Docs
+                    </Tag>
+                  </div>
+
+                  {/* Baris Bawah: Info Dua Driver (Flow UI) */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: '#f9f9f9',
+                    padding: '8px',
+                    borderRadius: '8px',
+                    border: '1px solid #eee',
+                    gap: 8
                   }}>
-                    {item.documentno}
-                  </div>
-                  
-                  <div style={{ fontSize: 14, fontWeight: '500', color: "#333", marginBottom: 4 }}>
-                    {item.customer}
-                  </div>
+                    {/* Driver Pengirim */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 9, color: '#999', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 2 }}>
+                        Pengirim
+                      </div>
+                      <div style={{
+                        fontSize: 12,
+                        fontWeight: '600',
+                        color: '#444',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        {bundle.drivername || "Internal/Vendor"}
+                      </div>
+                    </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: "#888" }}>
-                    <CalendarOutline />
-                    {item.plantime ? dayjs(item.plantime).format("DD MMM YYYY") : "-"}
-                  </div>
-                </div>
+                    {/* Icon Panah Alur */}
+                    <RightOutline style={{ color: '#ccc', fontSize: 14 }} />
 
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                   <Button
-                    size="mini"
-                    color="danger"
-                    fill="none"
-                    onClick={() => handleRejectItem(item)}
-                    style={{ paddingRight: 0 }}
-                  >
-                    Reject
-                  </Button>
+                    {/* Driver Penerima */}
+                    <div style={{ flex: 1, minWidth: 0, textAlign: 'right' }}>
+                      <div style={{ fontSize: 9, color: '#999', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 2 }}>
+                        Penerima
+                      </div>
+                      <div style={{
+                        fontSize: 12,
+                        fontWeight: '700',
+                        color: '#1677ff', // Warna biru menonjolkan siapa pembawa sekarang
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        {bundle.drivername_receipt || "Tanpa Nama"}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </Card>
-          ))}
-        </div>
-      </Collapse.Panel>
+            }
+          >
+            {/* 3. DAFTAR SHIPMENT (Bagian Dalam Collapse) */}
+            <div style={{ background: "#f0f2f5", borderRadius: 8, padding: 10 }}>
+              {bundle.shipments.map((item) => (
+                <Card
+                  key={item.key}
+                  style={{
+                    marginBottom: 8,
+                    borderRadius: 8,
+                    borderLeft: '4px solid #1677ff',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{
+                        fontSize: 17,
+                        fontWeight: "800",
+                        color: "#1677ff",
+                        marginBottom: 4,
+                        fontFamily: 'monospace'
+                      }}>
+                        {item.documentno}
+                      </div>
+
+                      <div style={{ fontSize: 14, fontWeight: '600', color: "#222", marginBottom: 6 }}>
+                        {item.customer}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: "#666" }}>
+                        <CalendarOutline fontSize={14} />
+                        {item.plantime ? dayjs(item.plantime).format("DD MMM YYYY") : "-"}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                      <Button
+                        size="mini"
+                        color="danger"
+                        fill="none"
+                        onClick={() => handleRejectItem(item)}
+                        style={{ '--padding-right': '0px', fontWeight: 'bold' }}
+                      >
+                        REJECT
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </Collapse.Panel>
+        </Collapse>
+
+      </div>
     );
   };
 
@@ -279,18 +350,18 @@ const DPKFromDriverMobile = () => {
 
   return (
     <LayoutGlobalMobile title="Receipt from Driver">
-      
+
       {/* 1. STICKY SEARCH BAR */}
-      <div style={{ 
-        position: 'sticky', 
-        top: 0, 
-        zIndex: 99, 
-        background: '#fff', 
+      <div style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 99,
+        background: '#fff',
         padding: '12px 12px 8px 12px',
         borderBottom: '1px solid #eee'
       }}>
-        <SearchBar 
-          placeholder="Cari No Dokumen / Bundle..." 
+        <SearchBar
+          placeholder="Cari No Dokumen / Bundle..."
           value={searchText}
           onChange={setSearchText}
           onClear={() => setSearchText("")}
@@ -315,13 +386,8 @@ const DPKFromDriverMobile = () => {
             </AutoCenter>
           )}
 
-          <Collapse
-            activeKey={activeKey}
-            onChange={setActiveKey}
-            accordion={false} // Biarkan banyak terbuka sekaligus
-          >
-            {filteredData.map((bundle) => renderBundle(bundle))}
-          </Collapse>
+
+          {filteredData.map((bundle) => renderBundle(bundle))}
         </div>
       </PullToRefresh>
 
@@ -341,8 +407,8 @@ const DPKFromDriverMobile = () => {
             color="primary"
             size="large"
             onClick={handleSubmit}
-            style={{ 
-              boxShadow: "0 4px 20px rgba(22, 119, 255, 0.5)", 
+            style={{
+              boxShadow: "0 4px 20px rgba(22, 119, 255, 0.5)",
               fontWeight: 'bold',
               borderRadius: 12
             }}

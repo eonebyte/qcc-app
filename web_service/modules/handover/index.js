@@ -954,9 +954,9 @@ class Handover {
 
         const insertGroupQuery = `
                 INSERT INTO adw_handover_group (
-                    createdby, documentno, checkpoint, notes, drivername, tnkb_id,
+                    createdby, documentno, checkpoint, notes, drivername, drivername_receipt, tnkb_id,
                     fromactor, toactor
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING adw_handover_group_id;
             `;
 
@@ -966,6 +966,7 @@ class Handover {
           "6",
           "ho driver to dpk",
           driverName,
+          userName,
           tnkbId,
           "Driver",
           "DPK",
@@ -976,7 +977,7 @@ class Handover {
         // Update trip_mode = RT
         const updateQuery = `
                 UPDATE adw_trackingsj
-                SET checkpoin_id = $1, updated = NOW(), trip_mode = 'RT', arrivedat_customer = 'Y'
+                SET checkpoin_id = $1, updated = NOW(), trip_mode = 'RT', arrivedat_customer = 'Y', drivername_receipt = $4
                 WHERE m_inout_id = ANY($2::integer[]) AND checkpoin_id = $3
                 RETURNING adw_trackingsj_id, m_inout_id;
             `;
@@ -985,6 +986,7 @@ class Handover {
           "6",
           inoutIds,
           "5",
+          userName
         ]);
 
         const updatedTracking = updateResult.rows;
@@ -1089,9 +1091,9 @@ class Handover {
 
       const insertGroupQuery = `
             INSERT INTO adw_handover_group (
-                createdby, documentno, checkpoint, notes, drivername, tnkb_id,
+                createdby, documentno, checkpoint, notes, drivername, drivername_receipt, tnkb_id,
                 fromactor, toactor
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING adw_handover_group_id;
         `;
 
@@ -1101,6 +1103,7 @@ class Handover {
         "6",
         "handover driver ke dpk",
         driverName,
+        userName,
         tnkbId,
         "Driver",
         "DPK",
@@ -1119,7 +1122,8 @@ class Handover {
                 checkpoin_id = $1,
                 updated = NOW(),
                 trip_mode = 'RT',
-                arrivedat_customer = 'Y'
+                arrivedat_customer = 'Y',
+                drivername_receipt = $4
             WHERE
                 m_inout_id = ANY($2::integer[])
                 AND checkpoin_id = $3
@@ -1130,6 +1134,7 @@ class Handover {
         "6", // pindah checkpoint ke 6
         inoutIds,
         "5", // hanya checkpoint 5
+        userName
       ];
 
       const updateResult = await dbClient.query(updateQuery, updateValues);
