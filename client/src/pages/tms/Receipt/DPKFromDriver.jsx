@@ -224,6 +224,8 @@ const DPKFromDriver = () => {
         setFilterDate(null);
       }
     } catch (error) {
+      console.log(error);
+      
       notification.error({ message: "Gagal", description: "Terjadi kesalahan." });
     } finally {
       setIsSubmitting(false);
@@ -244,6 +246,8 @@ const DPKFromDriver = () => {
         fetchData();
       }
     } catch (err) {
+      console.log(err);
+      
       notification.error({ message: "Reject Gagal" });
     } finally {
       setIsModalRejectOpen(false);
@@ -323,6 +327,7 @@ const DPKFromDriver = () => {
     },
     { title: "Bundle No", dataIndex: "bundleNo", key: "bundleNo" },
     { title: "Driver", dataIndex: "drivername", key: "drivername" },
+    { title: "TNKB", dataIndex: "plat_nomor", key: "plat_nomor" },
     {
       title: "Date Handover",
       dataIndex: "created",

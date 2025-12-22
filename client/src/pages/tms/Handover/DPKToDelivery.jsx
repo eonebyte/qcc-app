@@ -155,7 +155,13 @@ export default function DPKToDelivery() {
       title: "Driver",
       dataIndex: "drivername",
       key: "drivername",
-      ...getColumnSearchProps("customer"),
+      ...getColumnSearchProps("drivername"),
+    },
+    {
+      title: "TNKB",
+      dataIndex: "plat_nomor",
+      key: "plat_nomor",
+      ...getColumnSearchProps("plat_nomor"),
     },
     {
       title: "Plan Time",
@@ -186,6 +192,7 @@ export default function DPKToDelivery() {
         driverby: row.driverby,
         tnkb_id: row.tnkb_id,
         drivername: row.drivername,
+        plat_nomor: row.plat_nomor,
       }));
 
       setTableData(mapped);

@@ -1152,6 +1152,7 @@ class Receipt {
                     t.drivername,
                     t.adw_trackingsj_id,
                     t.checkpoin_id,
+                    t.tnkb_id,
                     gs.adw_handover_group_id
                 FROM adw_trackingsj t
                 LEFT JOIN adw_group_sj gs ON gs.adw_trackingsj_id = t.adw_trackingsj_id
@@ -1194,44 +1195,64 @@ class Receipt {
         outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT,
       });
 
-      const oracleMap = new Map(
-        oracleRows.rows.map((row) => [String(row.M_INOUT_ID), row]),
-      );
+      const sjMap = new Map(oracleRows.rows.map((row) => [String(row.M_INOUT_ID), row]));
+
+      const tnkbIds = [...new Set(postgresRows.map((r) => r.tnkb_id).filter(Boolean))];
+      let tnkbMap = new Map();
+
+      if (tnkbIds.length > 0) {
+        const oracleTnkbQuery = `
+                SELECT 
+                    ADW_TMS_TNKB_ID, 
+                    NAME AS PLAT_NOMOR 
+                FROM ADW_TMS_TNKB 
+                WHERE ADW_TMS_TNKB_ID IN (${tnkbIds.map((_, i) => `:${i + 1}`).join(",")})
+            `;
+
+        const tnkbRows = await connection.execute(oracleTnkbQuery, tnkbIds, {
+          outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT,
+        });
+
+        tnkbMap = new Map(tnkbRows.rows.map((row) => [String(row.ADW_TMS_TNKB_ID), row.PLAT_NOMOR]));
+      }
+
 
       // ---------------------------------------------------------
       // 3️⃣ Gabungkan PostgreSQL + Oracle
       // ---------------------------------------------------------
       const combined = postgresRows.map((pg) => {
-        const o = oracleMap.get(String(pg.m_inout_id));
+        const sj = sjMap.get(String(pg.m_inout_id));
+        const platNomor = tnkbMap.get(String(pg.tnkb_id));
 
         return {
           ...pg,
           drivername: pg.drivername,
-          documentno: o ? o.DOCUMENTNO : "N/A",
-          customer: o ? o.CUSTOMER : "N/A",
-          plantime: o ? o.PLANTIME : null,
-          sppno: o ? o.SPPNO : "N/A",
+          documentno: sj ? sj.DOCUMENTNO : "N/A",
+          customer: sj ? sj.CUSTOMER : "N/A",
+          plantime: sj ? sj.PLANTIME : null,
+          sppno: sj ? sj.SPPNO : "N/A",
+          plat_nomor: platNomor || "N/A" // Hasil dari adw_tms_tnkb
         };
       });
 
       // ---------------------------------------------------------
       // 4️⃣ Ambil data group berdasarkan group IDs hasil pivot
       // ---------------------------------------------------------
-      const groupIds = [
-        ...new Set(
-          combined.map((s) => s.adw_handover_group_id).filter(Boolean),
-        ),
-      ];
-
+      const groupIds = [...new Set(combined.map((s) => s.adw_handover_group_id).filter(Boolean))];
       const groupDataMap = new Map();
 
       if (groupIds.length > 0) {
+
+        const platByGroup = new Map();
+        combined.forEach(item => {
+          if (item.adw_handover_group_id && item.plat_nomor) {
+            // Kita ambil plat_nomor dari salah satu shipment di group ini
+            platByGroup.set(item.adw_handover_group_id, item.plat_nomor);
+          }
+        });
+
         const groupQuery = `
-                SELECT
-                    ahg.adw_handover_group_id,
-                    ahg.documentno,
-                    ahg.created,
-                    ahg.drivername
+                SELECT ahg.adw_handover_group_id, ahg.documentno, ahg.created, ahg.drivername
                 FROM adw_handover_group ahg
                 WHERE adw_handover_group_id = ANY($1::int[])
                 `;
@@ -1242,6 +1263,7 @@ class Receipt {
             bundleNo: row.documentno,
             created: row.created,
             drivername: row.drivername,
+            plat_nomor: platByGroup.get(row.adw_handover_group_id) || "N/A" // <-- Dimasukkan di sini
           });
         });
       }
@@ -1261,6 +1283,7 @@ class Receipt {
             bundleNo: info?.bundleNo || "N/A",
             created: info?.created || null,
             drivername: info?.drivername || null,
+            plat_nomor: info?.plat_nomor || "N/A", // <-- Muncul di level Header Bundle
             shipments: [],
           };
         }

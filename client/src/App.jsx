@@ -39,11 +39,14 @@ import AccountMobile from "./pages/AccountMobile";
 import axios from "axios";
 import { Toast } from "antd-mobile";
 
+
 import { useState } from "react";
 import PinSetupPopup from "./components/popups/PinSetupPopUp";
+import useIsMobile from "./hooks/useIsMobile";
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 function App() {
+  const isMobile = useIsMobile();
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
@@ -76,7 +79,9 @@ function App() {
       }
     };
 
-    initApp();
+    if (isMobile) {
+      initApp();
+    }
   }, [dispatch]);
 
   // Jika sedang loading, tampilkan spinner

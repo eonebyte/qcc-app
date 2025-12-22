@@ -417,7 +417,7 @@ class Handover {
           if (!currentTrackingId)
             throw new Error(
               "Failed to insert new tracking for m_inout_id: " +
-                item.m_inout_id,
+              item.m_inout_id,
             );
         }
 
@@ -425,10 +425,10 @@ class Handover {
         if (!currentTrackingId) {
           throw new Error(
             "Failed to determine adw_trackingsj_id for m_inout_id: " +
-              item.m_inout_id,
+            item.m_inout_id,
           );
         }
-        
+
         const updateCheckpoint = `
           UPDATE adw_trackingsj SET checkpoin_id = $1 WHERE adw_trackingsj_id = $2;
           `;
@@ -1240,6 +1240,8 @@ class Handover {
       // Ambil daftar ID-nya untuk di-query ke Oracle
       const mInoutIds = [...new Set(pgRows.map((row) => row.m_inout_id))];
 
+      const tnkbIds = [...new Set(pgRows.map((row) => row.tnkb_id).filter(Boolean))];
+
       // -----------------------------------------------------------
       // 2. AMBIL DETAIL DARI ORACLE BERDASARKAN ID TERSEBUT
       // -----------------------------------------------------------
@@ -1272,9 +1274,28 @@ class Handover {
 
       const oracleRows = resultOracle.rows || [];
 
+      let tnkbMap = new Map();
+      if (tnkbIds.length > 0) {
+        const bindVarsTnkb = tnkbIds.map((_, i) => `:${i + 1}`).join(",");
+        const queryOracleTnkb = `
+            SELECT ADW_TMS_TNKB_ID, NAME AS PLAT_NOMOR
+            FROM ADW_TMS_TNKB
+            WHERE ADW_TMS_TNKB_ID IN (${bindVarsTnkb})
+        `;
+
+        const resultTnkb = await connection.execute(queryOracleTnkb, tnkbIds, {
+          outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT,
+        });
+
+        resultTnkb.rows.forEach(row => {
+          tnkbMap.set(String(row.ADW_TMS_TNKB_ID), row.PLAT_NOMOR);
+        });
+      }
+
       // Mapping hasil Oracle agar formatnya sesuai yang diinginkan
       const finalData = oracleRows.map((row) => {
         const pgInfo = pgMap.get(row.M_INOUT_ID) || {};
+        const platNomor = tnkbMap.get(String(pgInfo.tnkb_id));
         return {
           m_inout_id: row.M_INOUT_ID,
           documentno: row.DOCUMENTNO,
@@ -1284,6 +1305,7 @@ class Handover {
           driverby: pgInfo.driverby || null,
           tnkb_id: pgInfo.tnkb_id || null,
           drivername: pgInfo.drivername || null,
+          plat_nomor: platNomor || "N/A" // <-- Plat nomor berhasil ditambahkan
         };
       });
 
