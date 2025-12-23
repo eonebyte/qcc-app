@@ -247,9 +247,11 @@ const HistoryBundleHandover = () => {
       width: 120,
       render: (_, r) => {
         const waiting = !r.received || r.received === "-";
+        const cp = Number(r.checkpoint) === 4;
+
         return (
           <Space>
-            {waiting && (
+            {waiting && cp && (
               <Tooltip title="Edit Transportasi Bundle">
                 <Button
                   type="text"
