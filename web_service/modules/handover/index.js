@@ -506,7 +506,7 @@ class Handover {
       await dbClient.query("BEGIN");
       let result;
 
-      const { data, driverId, driverName, tnkbId } = payload;
+      const { data, driverId, driverName, tnkbId, tnkbName } = payload;
 
       if (!data || !Array.isArray(data) || data.length === 0) {
         throw { statusCode: 400, message: "Data is required for handover." };
@@ -567,7 +567,8 @@ class Handover {
                 updatedby = $2,
                 drivername = $4,
                 tnkb_id = $5,
-                driver_id = $7
+                driver_id = $7,
+                tnkb = $8
             WHERE
                 m_inout_id = ANY($3::integer[])
                 AND checkpoin_id = $6
@@ -582,6 +583,7 @@ class Handover {
         tnkbId,
         "3", // hanya checkpoint 3
         driverId,
+        tnkbName
       ];
 
       const updateResult = await dbClient.query(updateQuery, updateValues);

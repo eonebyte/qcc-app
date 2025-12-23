@@ -34,7 +34,7 @@ export default function DPKToDriver() {
   const [drivers, setDrivers] = useState([]);
   const [tnkbs, setTnkbs] = useState([]);
   const [selectedDriver, setSelectedDriver] = useState(null);
-  const [selectedTnkbId, setSelectedTnkbId] = useState(null);
+  const [selectedTnkb, setSelectedTnkb] = useState(null);
 
   const [pagination, setPagination] = useState({
     current: 1,
@@ -297,7 +297,7 @@ export default function DPKToDriver() {
 
   // ================== SUBMIT TO BACKEND ==================
   const handleSubmit = async () => {
-    if (!selectedDriver || !selectedTnkbId) {
+    if (!selectedDriver || !selectedTnkb) {
       notification.error({
         message: "Validasi Gagal",
         description: "Silakan pilih Driver dan TNKB.",
@@ -312,7 +312,8 @@ export default function DPKToDriver() {
         data: selectedRows,
         driverId: selectedDriver.value,
         driverName: selectedDriver.label,
-        tnkbId: selectedTnkbId,
+        tnkbId: selectedTnkb.value,
+        tnkbName: selectedTnkb.label,
       };
 
       console.log(JSON.stringify(payload));
@@ -511,8 +512,8 @@ export default function DPKToDriver() {
             <Select
               style={{ width: "100%" }}
               placeholder="Pilih TNKB"
-              value={selectedTnkbId}
-              onChange={setSelectedTnkbId}
+              value={selectedTnkb}
+              onChange={setSelectedTnkb}
               showSearch
               optionFilterProp="children"
             >
@@ -520,6 +521,7 @@ export default function DPKToDriver() {
                 <Select.Option
                   key={tnkb.ADW_TMS_TNKB_ID}
                   value={tnkb.ADW_TMS_TNKB_ID}
+                  label={tnkb.NAME}
                 >
                   {tnkb.NAME}
                 </Select.Option>

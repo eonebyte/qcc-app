@@ -4695,15 +4695,19 @@ class TMS {
 
   async listBundleSJ(server, bundleId) {
     let dbClient;
+    let oracleConnection;
 
     try {
+      // 1. Ambil data dari PostgreSQL
       dbClient = await server.pg.connect();
 
       const query = `
             SELECT
                 tsj.adw_trackingsj_id,
                 tsj.documentno,
-                tsj.drivername
+                tsj.drivername,
+                tsj.tnkb_id,
+                tsj.m_inout_id  -- Kita butuh ID ini untuk join ke Oracle
             FROM adw_group_sj gs
             LEFT JOIN adw_trackingsj tsj
                 ON tsj.adw_trackingsj_id = gs.adw_trackingsj_id
@@ -4712,12 +4716,72 @@ class TMS {
         `;
 
       const result = await dbClient.query(query, [bundleId]);
-      return result.rows;
+      const pgRows = result.rows;
+
+      // Jika tidak ada data di PG, langsung return
+      if (pgRows.length === 0) return [];
+
+      // 2. Kumpulkan m_inout_id untuk query ke Oracle
+      const inoutIds = pgRows
+        .map((row) => row.m_inout_id)
+        .filter((id) => id !== null)
+        .map((id) => Number(id)); // Konversi paksa ke Number
+
+      if (inoutIds.length === 0) {
+        // Jika ada baris tapi m_inout_id semua null
+        return pgRows.map(row => ({ ...row, customer: "No Customer" }));
+      }
+
+      // 3. Ambil data Customer dari Oracle
+      oracleConnection = await oracleDB.openConnection();
+
+      // Build placeholders (:id1, :id2, ...)
+      const placeholders = inoutIds.map((_, i) => `:id${i + 1}`).join(",");
+      const bindParams = {};
+      inoutIds.forEach((val, index) => {
+        bindParams[`id${index + 1}`] = val;
+      });
+
+      const queryOracle = `
+            SELECT
+                mi.M_INOUT_ID,
+                cb.VALUE AS CUSTOMER
+            FROM M_INOUT mi
+            JOIN C_BPARTNER cb ON cb.C_BPARTNER_ID = mi.C_BPARTNER_ID
+            WHERE mi.M_INOUT_ID IN (${placeholders})
+        `;
+
+      const resultOracle = await oracleConnection.execute(
+        queryOracle,
+        bindParams,
+        { outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT }
+      );
+
+      // 4. Mapping hasil Oracle ke dalam Map agar mudah di-lookup
+      // resultOracle.rows biasanya array of objects jika menggunakan OUT_FORMAT_OBJECT
+      const customerMap = {};
+      resultOracle.rows.forEach((oraRow) => {
+        // Oracle mengembalikan key uppercase secara default (M_INOUT_ID, CUSTOMER)
+        customerMap[oraRow.M_INOUT_ID] = oraRow.CUSTOMER;
+      });
+
+      // 5. Gabungkan data PG dengan Nama Customer dari Oracle
+      const finalResult = pgRows.map((row) => ({
+        adw_trackingsj_id: row.adw_trackingsj_id,
+        documentno: row.documentno,
+        drivername: row.drivername,
+        m_inout_id: row.m_inout_id,
+        customer: customerMap[row.m_inout_id] || "Customer Tidak Ditemukan"
+      }));
+
+      return finalResult;
+
     } catch (err) {
-      console.log("Error list bundle SJ:", err);
+      console.error("Error list bundle SJ:", err);
       return [];
     } finally {
       if (dbClient) await dbClient.release();
+      if (oracleConnection) await oracleConnection.close();
     }
   }
 

@@ -326,6 +326,7 @@ const HistoryBundleHandover = () => {
         columns={[
           { title: "SJ No", dataIndex: "documentno", render: (t) => highlightText(t, sjSearch) },
           { title: "Driver", dataIndex: "drivername", render: (t) => highlightText(t, driverSearch) },
+          { title: "Customer", dataIndex: "customer", render: (t) => highlightText(t, driverSearch) },
         ]}
         dataSource={rows}
         pagination={false}
