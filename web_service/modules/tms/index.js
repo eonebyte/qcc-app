@@ -4706,7 +4706,7 @@ class TMS {
                 tsj.adw_trackingsj_id,
                 tsj.documentno,
                 tsj.drivername,
-                tsj.tnkb_id,
+                tsj.tnkb,
                 tsj.m_inout_id  -- Kita butuh ID ini untuk join ke Oracle
             FROM adw_group_sj gs
             LEFT JOIN adw_trackingsj tsj
@@ -4771,6 +4771,7 @@ class TMS {
         documentno: row.documentno,
         drivername: row.drivername,
         m_inout_id: row.m_inout_id,
+        tnkb: row.tnkb,
         customer: customerMap[row.m_inout_id] || "Customer Tidak Ditemukan"
       }));
 
@@ -6103,6 +6104,115 @@ class TMS {
       };
     } finally {
       if (dbClient) await dbClient.release();
+    }
+  }
+
+
+  async updateSJDPKToDriver(server, bundleId, payload) {
+    let client;
+    try {
+      client = await server.pg.connect();
+
+      // Fungsi pembantu untuk memvalidasi string (tidak null, undefined, atau kosong)
+      const isValidString = (val) => val !== null && val !== undefined && val.toString().trim() !== "";
+
+      // 1. Memulai Transaksi
+      await client.query('BEGIN');
+
+      console.log('log driver name : ', payload.driver_name);
+      
+
+      // Tentukan apakah Driver dan TNKB layak update berdasarkan ID DAN Nama
+      const isDriverValid = payload.driver_id && isValidString(payload.driver_name);
+      const isTnkbValid = payload.tnkb_id && isValidString(payload.tnkb_name);
+
+      // ============================================================
+      // A. UPDATE DETAIL (Tabel: adw_trackingsj)
+      // ============================================================
+      const updatesSJ = [];
+      const valuesSJ = [];
+      let idxSJ = 1;
+
+      if (isDriverValid) {
+        updatesSJ.push(`driver_id = $${idxSJ++}`, `drivername = $${idxSJ++}`);
+        valuesSJ.push(payload.driver_id, payload.driver_name);
+      }
+
+      if (isTnkbValid) {
+        updatesSJ.push(`tnkb_id = $${idxSJ++}`, `tnkb = $${idxSJ++}`);
+        valuesSJ.push(payload.tnkb_id, payload.tnkb_name);
+      }
+
+      if (updatesSJ.length > 0) {
+        valuesSJ.push(bundleId);
+        const querySJ = `
+        UPDATE adw_trackingsj 
+        SET 
+            ${updatesSJ.join(", ")},
+            updated = NOW()
+        WHERE adw_trackingsj_id IN (
+            SELECT adw_trackingsj_id 
+            FROM adw_group_sj 
+            WHERE adw_handover_group_id = $${idxSJ}
+        );
+      `;
+        await client.query(querySJ, valuesSJ);
+      }
+
+      // ============================================================
+      // B. UPDATE HEADER (Tabel: adw_handover_group)
+      // ============================================================
+      const updatesHG = [];
+      const valuesHG = [];
+      let idxHG = 1;
+
+      if (isDriverValid) {
+        updatesHG.push(`driverby = $${idxHG++}`, `drivername = $${idxHG++}`);
+        valuesHG.push(payload.driver_id, payload.driver_name);
+      }
+
+      if (isTnkbValid) {
+        updatesHG.push(`tnkb_id = $${idxHG++}`);
+        valuesHG.push(payload.tnkb_id);
+      }
+
+      if (updatesHG.length > 0) {
+        valuesHG.push(bundleId);
+        const queryHG = `
+        UPDATE adw_handover_group 
+        SET 
+            ${updatesHG.join(", ")},
+            updated = NOW()
+        WHERE adw_handover_group_id = $${idxHG}
+      `;
+        await client.query(queryHG, valuesHG);
+      }
+
+      // Jika tidak ada satu pun yang valid untuk diupdate
+      if (updatesSJ.length === 0 && updatesHG.length === 0) {
+        await client.query('ROLLBACK');
+        return {
+          success: false,
+          message: "No valid data (Driver Name or TNKB Name) to update"
+        };
+      }
+
+      // 2. Commit Transaksi jika semua sukses
+      await client.query('COMMIT');
+
+      return {
+        success: true,
+        message: "Header (Bundle) and Detail (SJ) updated successfully",
+        bundleId: bundleId
+      };
+
+    } catch (error) {
+      // 3. Rollback jika terjadi kegagalan
+      if (client) await client.query('ROLLBACK');
+      console.error("Error pada updateSJDPKToDriver:", error);
+      throw error;
+    } finally {
+      if (client) client.release();
     }
   }
 }

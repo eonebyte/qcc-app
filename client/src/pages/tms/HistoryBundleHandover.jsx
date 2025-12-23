@@ -8,12 +8,12 @@ import {
   Modal,
   Spin,
   message,
-  Popover,
   Input,
   DatePicker,
   Space,
   Tooltip,
   Flex,
+  Select,
 } from "antd";
 import {
   CheckCircleOutlined,
@@ -22,8 +22,8 @@ import {
   PrinterOutlined,
   SearchOutlined,
   SyncOutlined,
+  EditOutlined,
 } from "@ant-design/icons";
-import * as XLSX from "xlsx";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
@@ -31,16 +31,16 @@ import { useSelector } from "react-redux";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 const { RangePicker } = DatePicker;
+const { Option } = Select;
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
-const backEndUrlAttachment =
-  import.meta.env.VITE_BACKEND_URL_ATTACHMENT || "http://localhost:3200";
+const backEndUrlAttachment = import.meta.env.VITE_BACKEND_URL_ATTACHMENT || "http://localhost:3200";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const formatDate = (iso) => {
-  if (!iso) return "-";
+  if (!iso || iso === "-") return "-";
   return dayjs(iso).tz("Asia/Jakarta").format("YYYY-MM-DD");
 };
 
@@ -52,6 +52,13 @@ const HistoryBundleHandover = () => {
   const [loading, setLoading] = useState(false);
   const [sjData, setSjData] = useState({});
 
+  // States untuk Edit Bundle
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingBundle, setEditingBundle] = useState(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [driverOptions, setDriverOptions] = useState([]);
+  const [tnkbOptions, setTnkbOptions] = useState([]);
+
   // Filter States
   const [bundleSearch, setBundleSearch] = useState("");
   const [sjSearch, setSjSearch] = useState("");
@@ -60,11 +67,9 @@ const HistoryBundleHandover = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
-
-  // PERBAIKAN: Gunakan ID untuk melacak baris mana yang sedang loading
   const [processingId, setProcessingId] = useState(null);
 
-  // Checkpoint Logic
+  // Role Checkpoint
   let cPoint, cPointSecond;
   switch (role) {
     case "delivery": cPoint = 2; cPointSecond = 10; break;
@@ -86,50 +91,104 @@ const HistoryBundleHandover = () => {
       if (filters.startDate) params.append("start_date", filters.startDate);
       if (filters.endDate) params.append("end_date", filters.endDate);
 
-      const res = await fetch(`${backEndUrl}/tms/listbundle?${params.toString()}`, {
-        credentials: "include",
-      });
+      const res = await fetch(`${backEndUrl}/tms/listbundle?${params.toString()}`, { credentials: "include" });
       const json = await res.json();
-      setData(json.data.map(item => ({
-        key: item.adw_handover_group_id,
-        ...item
-      })));
-    } catch (err) {
-      console.log(err);
 
-      message.error("Gagal memuat data");
+      setData(json.data.map(item => ({ key: item.adw_handover_group_id, ...item })));
+    } catch (err) {
+      console.error(err);
+      message.error("Gagal memuat data utama");
     } finally {
       setLoading(false);
     }
   }, [cPoint, cPointSecond]);
 
+  const fetchOptions = async () => {
+    try {
+      const [resDrivers, resTnkbs] = await Promise.all([
+        fetch(`${backEndUrl}/tms/drivers`, { credentials: "include" }),
+        fetch(`${backEndUrl}/tms/tnkbs`, { credentials: "include" })
+      ]);
+      const jsonDrivers = await resDrivers.json();
+      const jsonTnkbs = await resTnkbs.json();
+
+      setDriverOptions(jsonDrivers.data || []);
+      setTnkbOptions(jsonTnkbs.data || []);
+    } catch (err) {
+      console.error("Gagal load opsi:", err);
+    }
+  };
+
   useEffect(() => {
     loadData();
+    fetchOptions();
   }, [loadData]);
 
-  const handleSearch = () => {
-    loadData({
-      bundle: bundleSearch,
-      sj: sjSearch,
-      driver: driverSearch,
-      startDate: dateRange ? dateRange[0].format("YYYY-MM-DD") : "",
-      endDate: dateRange ? dateRange[1].format("YYYY-MM-DD") : "",
-    });
-  };
-
-  const handleResetFilter = () => {
-    setBundleSearch("");
-    setSjSearch("");
-    setDriverSearch("");
-    setDateRange(null);
-    loadData();
-  };
-
   const loadSJ = async (bundleId) => {
-    if (sjData[bundleId]) return;
     const res = await fetch(`${backEndUrl}/tms/listbundle/${bundleId}/sj`, { credentials: "include" });
     const json = await res.json();
     setSjData(prev => ({ ...prev, [bundleId]: json.data }));
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingBundle?.ad_user_id && !editingBundle?.ADW_TMS_TNKB_ID) {
+      return message.warning("Minimal pilih salah satu: Driver atau TNKB");
+    }
+
+    setEditLoading(true);
+    try {
+      const payload = {
+        adw_handover_group_id: editingBundle.key,
+        driver_id: editingBundle.ad_user_id,
+        driver_name: editingBundle.driver_name,
+        tnkb_id: editingBundle.ADW_TMS_TNKB_ID,
+        tnkb_name: editingBundle.tnkb_name,
+      };
+
+      const response = await fetch(`${backEndUrl}/tms/update/dkp/to/driver`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        message.success("Informasi Bundle berhasil diperbarui");
+        setIsEditModalOpen(false);
+        loadData();
+        setSjData({});
+      } else {
+        throw new Error();
+      }
+    } catch (err) {
+      console.error(err);
+      message.error("Gagal memperbarui data bundle");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handlePrint = async (record) => {
+    if (!record.received || record.received === "-") {
+      return notification.warning({ message: "Belum Bisa Dicetak", description: "Dokumen belum diterima." });
+    }
+    try {
+      setProcessingId(record.key);
+      const response = await fetch(`${backEndUrlAttachment}/files/handover/${record.attachment}`);
+      const existingPdfBytes = await response.arrayBuffer();
+      const pdfDoc = await PDFDocument.load(existingPdfBytes);
+      const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const firstPage = pdfDoc.getPages()[0];
+      const printDate = dayjs().tz("Asia/Jakarta").format("DD/MM/YYYY HH:mm") + " WIB";
+      firstPage.drawText(`Print Date: ${printDate}`, { x: 40, y: firstPage.getSize().height - 15, size: 8, font: helveticaFont, color: rgb(0, 0, 0) });
+      const pdfBytes = await pdfDoc.save();
+      setPdfBlobUrl(URL.createObjectURL(new Blob([pdfBytes], { type: "application/pdf" })));
+      setIsModalOpen(true);
+    } catch (error) {
+      notification.error({ message: "Gagal Memproses PDF" });
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   const highlightText = (text, query) => {
@@ -138,151 +197,35 @@ const HistoryBundleHandover = () => {
     return (
       <span>
         {parts.map((part, i) =>
-          part.toLowerCase() === query.toLowerCase()
-            ? <mark key={i} style={{ backgroundColor: "#ffc069", padding: 0 }}>{part}</mark>
-            : part
+          part.toLowerCase() === query.toLowerCase() ? <mark key={i} style={{ backgroundColor: "#ffc069", padding: 0 }}>{part}</mark> : part
         )}
       </span>
     );
   };
 
-  const handlePrint = async (record) => {
-    if (!record.received || record.received === "-") {
-      return notification.warning({ message: "Belum Bisa Dicetak", description: "Dokumen belum diterima." });
-    }
-    try {
-      // PERBAIKAN: Set ID baris yang sedang diproses
-      setProcessingId(record.key);
-
-      const response = await fetch(`${backEndUrlAttachment}/files/handover/${record.attachment}`);
-      const existingPdfBytes = await response.arrayBuffer();
-      const pdfDoc = await PDFDocument.load(existingPdfBytes);
-      const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const firstPage = pdfDoc.getPages()[0];
-      const printDate = dayjs().tz("Asia/Jakarta").format("DD/MM/YYYY HH:mm") + " WIB";
-      firstPage.drawText(`Print Date: ${printDate}`, { x: 40, y: firstPage.getSize().height - 15, size: 8, font: helveticaFont, color: rgb(0, 0, 0) });
-
-      const pdfBytes = await pdfDoc.save();
-      setPdfBlobUrl(URL.createObjectURL(new Blob([pdfBytes], { type: "application/pdf" })));
-      setIsModalOpen(true);
-    } catch (error) {
-      console.log(error);
-
-      notification.error({ message: "Gagal Memproses PDF" });
-    } finally {
-      // PERBAIKAN: Reset kembali ke null
-      setProcessingId(null);
-    }
-  };
-
-  const exportExcel = async () => {
-    if (!data || data.length === 0) {
-      message.warning("Tidak ada data untuk diexport");
-      return;
-    }
-
-    const hide = message.loading("Sedang menyiapkan data report...", 0);
-    setLoading(true);
-
-    try {
-      const reportData = [];
-
-      // 1. Loop semua bundle yang ada di tabel (hasil filter)
-      for (const bundle of data) {
-        let sjs = sjData[bundle.key];
-
-        // 2. Jika data SJ belum pernah di-load (lazy load), ambil dulu dari server
-        if (!sjs) {
-          try {
-            const res = await fetch(`${backEndUrl}/tms/listbundle/${bundle.key}/sj`, {
-              credentials: "include",
-            });
-            const json = await res.json();
-            sjs = json.data;
-            // Simpan ke state agar tidak perlu fetch ulang jika user expand manual nanti
-            setSjData((prev) => ({ ...prev, [bundle.key]: json.data }));
-          } catch (err) {
-            console.log(err);
-
-            console.error(`Gagal mengambil SJ untuk bundle ${bundle.documentno}`);
-            sjs = [];
-          }
-        }
-
-        // 3. Masukkan data ke array report (Flattening)
-        if (sjs && sjs.length > 0) {
-          sjs.forEach((sj) => {
-            reportData.push({
-              "Bundle No": bundle.documentno,
-              "Destination": bundle.toactor,
-              "Total SJ in Bundle": bundle.total_shipments,
-              "SJ Number": sj.documentno,
-              "Driver Name": sj.drivername,
-              "Date Handover": formatDate(bundle.created),
-              "Date Received": formatDate(bundle.received),
-              "Receiver": bundle.receivedby || "-",
-              "Status": bundle.received && bundle.received !== "-" ? "Completed" : "Waiting Receipt",
-            });
-          });
-        } else {
-          // Fallback jika bundle tidak punya SJ (data kosong)
-          reportData.push({
-            "Bundle No": bundle.documentno,
-            "Destination": bundle.toactor,
-            "Total SJ in Bundle": bundle.total_shipments,
-            "SJ Number": "-",
-            "Driver Name": "-",
-            "Date Handover": formatDate(bundle.created),
-            "Date Received": formatDate(bundle.received),
-            "Receiver": "-",
-            "Status": "No Data",
-          });
-        }
-      }
-
-      // 4. Generate Worksheet
-      const ws = XLSX.utils.json_to_sheet(reportData);
-
-      // 5. Atur lebar kolom agar rapi (optional tapi profesional)
-      const colWidths = [
-        { wch: 18 }, // Bundle No
-        { wch: 15 }, // Destination
-        { wch: 15 }, // Total SJ
-        { wch: 20 }, // SJ Number
-        { wch: 20 }, // Driver Name
-        { wch: 15 }, // Date Handover
-        { wch: 15 }, // Date Received
-        { wch: 15 }, // Receiver
-        { wch: 15 }, // Status
-      ];
-      ws['!cols'] = colWidths;
-
-      // 6. Buat Workbook dan download
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Handover Detail Report");
-
-      const fileName = `Report_Handover_${dayjs().format("YYYYMMDD_HHmmss")}.xlsx`;
-      XLSX.writeFile(wb, fileName);
-
-      message.success("Report berhasil diexport");
-    } catch (error) {
-      console.error(error);
-      message.error("Gagal melakukan export excel");
-    } finally {
-      hide(); // Tutup loading message
-      setLoading(false);
-    }
-  };
-
   const columns = [
     { title: "No", key: "no", width: 50, align: "center", render: (_, __, i) => i + 1 },
-    {
-      title: "Bundle No",
-      dataIndex: "documentno",
-      render: (val) => highlightText(val, bundleSearch)
-    },
+    { title: "Bundle No", dataIndex: "documentno", render: (val) => <b>{highlightText(val, bundleSearch)}</b> },
     { title: "To", dataIndex: "toactor", align: "center" },
-    { title: "Total SJ", dataIndex: "total_shipments", align: "center", width: 100 },
+    { title: "Total SJ", dataIndex: "total_shipments", align: "center", width: 80 },
+    // KOLOM BARU: DRIVER
+    {
+      title: "Driver",
+      dataIndex: "drivername",
+      render: (t) => highlightText(t || "-", driverSearch)
+    },
+    // KOLOM BARU: TNKB
+    {
+      title: "TNKB",
+      dataIndex: "tnkb",
+      render: (t, record) => {
+        // Jika backend mengirimkan string nama TNKB, gunakan itu
+        if (t && t !== "-") return t;
+        // Jika hanya ada id, cari namanya di tnkbOptions
+        const found = tnkbOptions.find(opt => opt.ADW_TMS_TNKB_ID === record.tnkb_id);
+        return found ? found.NAME : "-";
+      }
+    },
     { title: "Date Handover", dataIndex: "created", align: "center", render: formatDate },
     { title: "Date Receipt", dataIndex: "received", align: "center", render: formatDate },
     {
@@ -299,22 +242,42 @@ const HistoryBundleHandover = () => {
       },
     },
     {
-      title: "Print",
+      title: "Action",
       align: "center",
-      width: 80,
-      render: (_, r) => (
-        <Tooltip title="Cetak PDF">
-          <Button
-            type="text"
-            icon={<PrinterOutlined style={{ color: '#1890ff' }} />}
-            onClick={() => handlePrint(r)}
-            // PERBAIKAN: Loading hanya aktif jika ID baris ini cocok dengan processingId
-            loading={processingId === r.key}
-            // Optional: Disable tombol baris lain jika ada satu yang sedang loading
-            disabled={processingId !== null && processingId !== r.key}
-          />
-        </Tooltip>
-      ),
+      width: 120,
+      render: (_, r) => {
+        const waiting = !r.received || r.received === "-";
+        return (
+          <Space>
+            {waiting && (
+              <Tooltip title="Edit Transportasi Bundle">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EditOutlined style={{ color: "#faad14" }} />}
+                  onClick={() => {
+                    setEditingBundle({
+                      ...r,
+                      ad_user_id: r.driverby || null, // Pastikan ini sesuai dengan key dari query listBundle (driver_id)
+                      ADW_TMS_TNKB_ID: r.tnkb_id || null // Pastikan ini sesuai dengan key dari query listBundle (tnkb_id)
+                    });
+                    setIsEditModalOpen(true);
+                  }}
+                />
+              </Tooltip>
+            )}
+            <Tooltip title="Print PDF">
+              <Button
+                type="text"
+                size="small"
+                icon={<PrinterOutlined style={{ color: '#1890ff' }} />}
+                onClick={() => handlePrint(r)}
+                loading={processingId === r.key}
+              />
+            </Tooltip>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -323,10 +286,12 @@ const HistoryBundleHandover = () => {
     if (!rows) return <div style={{ padding: 10 }}><Spin size="small" /> Memuat data...</div>;
     return (
       <Table
+        rowKey="adw_trackingsj_id"
         columns={[
           { title: "SJ No", dataIndex: "documentno", render: (t) => highlightText(t, sjSearch) },
-          { title: "Driver", dataIndex: "drivername", render: (t) => highlightText(t, driverSearch) },
-          { title: "Customer", dataIndex: "customer", render: (t) => highlightText(t, driverSearch) },
+          { title: "Driver", dataIndex: "drivername" },
+          { title: "Customer", dataIndex: "customer" },
+          { title: "TNKB", dataIndex: "tnkb" },
         ]}
         dataSource={rows}
         pagination={false}
@@ -339,46 +304,17 @@ const HistoryBundleHandover = () => {
 
   return (
     <div style={{ padding: "16px" }}>
-      <Card size="small" variant="bordered" style={{ marginBottom: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+      <Card size="small" style={{ marginBottom: 16 }}>
         <Flex justify="space-between" align="center" wrap="wrap" gap="small">
           <Space wrap>
-            <Input
-              placeholder="Bundle No"
-              value={bundleSearch}
-              onChange={(e) => setBundleSearch(e.target.value)}
-              onPressEnter={handleSearch}
-              style={{ width: 140 }}
-              prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
-              allowClear
-            />
-            <Input
-              placeholder="SJ No"
-              value={sjSearch}
-              onChange={(e) => setSjSearch(e.target.value)}
-              onPressEnter={handleSearch}
-              style={{ width: 140 }}
-              allowClear
-            />
-            <Input
-              placeholder="Driver"
-              value={driverSearch}
-              onChange={(e) => setDriverSearch(e.target.value)}
-              onPressEnter={handleSearch}
-              style={{ width: 140 }}
-              allowClear
-            />
-            <RangePicker
-              value={dateRange}
-              onChange={setDateRange}
-              style={{ width: 230 }}
-            />
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch} />
-            <Tooltip title="Reset Filter">
-              <Button icon={<SyncOutlined />} onClick={handleResetFilter} />
-            </Tooltip>
+            <Input placeholder="Bundle No" value={bundleSearch} onChange={e => setBundleSearch(e.target.value)} style={{ width: 140 }} allowClear />
+            <Input placeholder="SJ No" value={sjSearch} onChange={e => setSjSearch(e.target.value)} style={{ width: 140 }} allowClear />
+            <Input placeholder="Driver" value={driverSearch} onChange={e => setDriverSearch(e.target.value)} style={{ width: 140 }} allowClear />
+            <RangePicker value={dateRange} onChange={setDateRange} style={{ width: 230 }} />
+            <Button type="primary" icon={<SearchOutlined />} onClick={() => loadData({ bundle: bundleSearch, sj: sjSearch, driver: driverSearch, startDate: dateRange?.[0]?.format("YYYY-MM-DD"), endDate: dateRange?.[1]?.format("YYYY-MM-DD") })} />
+            <Button icon={<SyncOutlined />} onClick={() => { setBundleSearch(""); setSjSearch(""); setDriverSearch(""); setDateRange(null); loadData(); }} />
           </Space>
-
-          <Button icon={<FileExcelOutlined />} onClick={exportExcel} />
+          <Button icon={<FileExcelOutlined />} onClick={() => message.info("Feature Exporting...")} />
         </Flex>
       </Card>
 
@@ -387,24 +323,71 @@ const HistoryBundleHandover = () => {
         columns={columns}
         dataSource={data}
         size="middle"
-        pagination={{ pageSize: 10, showSizeChanger: true }}
         expandable={{
           expandedRowRender: expandedRow,
           onExpand: (expanded, record) => expanded && loadSJ(record.key),
         }}
-        style={{ backgroundColor: "white", borderRadius: 8 }}
       />
 
       <Modal
-        title="Pratinjau Dokumen"
-        open={isModalOpen}
-        onCancel={() => setIsModalOpen(false)}
-        footer={[<Button key="close" onClick={() => setIsModalOpen(false)}>Tutup</Button>]}
-        width={1000}
-        centered
+        title="Edit Transportasi Bundle (Semua SJ)"
+        open={isEditModalOpen}
+        onOk={handleSaveEdit}
+        confirmLoading={editLoading}
+        onCancel={() => setIsEditModalOpen(false)}
         destroyOnClose
+        width={450}
       >
-        <iframe src={pdfBlobUrl} width="100%" height="700px" style={{ border: "none" }} title="PDF Preview" />
+        <div style={{ display: "flex", flexDirection: "column", gap: 15, marginTop: 15 }}>
+          <div>
+            <div style={{ marginBottom: 5, fontWeight: 'bold' }}>Bundle No:</div>
+            <Input value={editingBundle?.documentno} disabled style={{ backgroundColor: '#f5f5f5', color: '#000' }} />
+          </div>
+
+          <div>
+            <div style={{ marginBottom: 5, fontWeight: 'bold' }}>Pilih Driver Baru:</div>
+            <Select
+              showSearch
+              style={{ width: '100%' }}
+              placeholder="Cari Nama Driver"
+              optionFilterProp="children"
+              value={editingBundle?.ad_user_id}
+              onChange={(val, opt) => setEditingBundle({
+                ...editingBundle,
+                ad_user_id: val,
+                driver_name: opt.children
+              })}
+            >
+              {driverOptions.map(d => (
+                <Option key={d.ad_user_id} value={d.ad_user_id}>{d.name}</Option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <div style={{ marginBottom: 5, fontWeight: 'bold' }}>Pilih TNKB Baru:</div>
+            <Select
+              showSearch
+              style={{ width: '100%' }}
+              placeholder="Cari Plat Nomor"
+              optionFilterProp="children"
+              value={editingBundle?.ADW_TMS_TNKB_ID}
+              onChange={(val, opt) => setEditingBundle({
+                ...editingBundle,
+                ADW_TMS_TNKB_ID: val,
+                tnkb_name: opt.children
+              })}
+            >
+              {tnkbOptions.map(t => (
+                <Option key={t.ADW_TMS_TNKB_ID} value={t.ADW_TMS_TNKB_ID}>{t.NAME}</Option>
+              ))}
+            </Select>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal title="Pratinjau Dokumen" open={isModalOpen} onCancel={() => setIsModalOpen(false)} footer={null} width={1000} centered>
+        <iframe src={pdfBlobUrl} width="100%" height="700px" style={{ border: "none" }} />
       </Modal>
     </div>
   );

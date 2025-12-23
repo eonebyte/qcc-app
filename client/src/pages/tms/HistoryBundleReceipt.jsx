@@ -226,7 +226,7 @@ const HistoryBundleReceipt = () => {
     {
       title: "Bundle No",
       dataIndex: "documentno",
-      render: (val) => highlightText(val, bundleSearch),
+      render: (val) => <b>{highlightText(val, bundleSearch)}</b>,
     },
     { title: "From", dataIndex: "fromactor", align: "center" },
     { title: "Total SJ", dataIndex: "total_shipments", align: "center", width: 100 },
@@ -271,6 +271,7 @@ const HistoryBundleReceipt = () => {
           columns={[
             { title: "SJ No", dataIndex: "documentno", render: (t) => highlightText(t, sjSearch) },
             { title: "Driver", dataIndex: "drivername", render: (t) => highlightText(t, driverSearch) },
+            { title: "TNKB", dataIndex: "tnkb" },
           ]}
           dataSource={rows}
           pagination={false}

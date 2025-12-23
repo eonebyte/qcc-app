@@ -234,8 +234,11 @@ const HistoryBundleHandoverMobile = () => {
                                             <List style={{ "--font-size": "13px" }}>
                                                 {sjData[item.key] ? (
                                                     sjData[item.key].map((sj) => (
-                                                        <List.Item key={sj.adw_trackingsj_id} description={`Driver: ${sj.drivername ? sj.drivername : '-'}`}>
-                                                            {highlightText(sj.documentno, sjSearch)}
+                                                        <List.Item key={sj.adw_trackingsj_id}
+                                                            description=''>
+                                                            <b>{highlightText(sj.documentno, sjSearch)}</b> <br />
+                                                            Driver: <b>{sj.drivername ? sj.drivername : '-'}</b> <br />
+                                                            TNKB: <b>{sj.tnkb}</b>
                                                         </List.Item>
                                                     ))
                                                 ) : (

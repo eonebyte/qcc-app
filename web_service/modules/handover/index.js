@@ -68,7 +68,7 @@ class Handover {
                     INNER JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
                 WHERE
                     mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
-                    AND mi.MOVEMENTDATE < TO_DATE(:endDate, 'YYYY-MM-DD') + 1
+                    AND mi.MOVEMENTDATE < TO_DATE(:endDate, 'YYYY-MM-DD') + 7
                     AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                     AND ISSOTRX = 'Y'
                     AND cb.ISSUBCONTRACT = 'N'
@@ -529,8 +529,8 @@ class Handover {
       const insertGroupQuery = `
             INSERT INTO adw_handover_group (
                 createdby, documentno, checkpoint, notes,
-                fromactor, toactor
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                fromactor, toactor, driverby
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING adw_handover_group_id;
         `;
 
@@ -541,6 +541,7 @@ class Handover {
         "ho dpk to driver",
         "DPK",
         "Driver",
+        driverId
       ]);
 
       const groupId = groupRes.rows[0].adw_handover_group_id;
