@@ -185,6 +185,8 @@ const HistoryBundleHandover = () => {
       setPdfBlobUrl(URL.createObjectURL(new Blob([pdfBytes], { type: "application/pdf" })));
       setIsModalOpen(true);
     } catch (error) {
+      console.log(error);
+
       notification.error({ message: "Gagal Memproses PDF" });
     } finally {
       setProcessingId(null);
