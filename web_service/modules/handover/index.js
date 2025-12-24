@@ -72,7 +72,7 @@ class Handover {
                     AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP')
                     AND ISSOTRX = 'Y'
                     AND cb.ISSUBCONTRACT = 'N'
-                    AND co.ISMILKRUN = 'N'
+                    -- AND co.ISMILKRUN = 'N'
                     AND (mi.POREFERENCE NOT LIKE '%SAMPLE%' OR mi.POREFERENCE IS NULL)
                     ORDER BY mi.DOCUMENTNO DESC
                 `;
