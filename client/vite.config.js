@@ -27,7 +27,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB
       },
-      registerType: "autoUpdate",
+      registerType: "prompt",
       manifest: {
         name: "STS App",
         short_name: "STS",

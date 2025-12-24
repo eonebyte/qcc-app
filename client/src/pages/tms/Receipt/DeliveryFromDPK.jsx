@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { CheckOutlined, CloseOutlined } from "@ant-design/icons";
+import { useEffect, useState, useMemo } from "react";
+import { CheckOutlined, CloseOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   Button,
   Checkbox,
@@ -8,9 +8,14 @@ import {
   Table,
   Typography,
   notification,
+  Input,
+  Space,
+  DatePicker,
+  Tag,
 } from "antd";
 import axios from "axios";
 import { DateTime } from "luxon";
+import dayjs from "dayjs";
 import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
 import { useSelector } from "react-redux";
 import useIsMobile from "../../../hooks/useIsMobile";
@@ -26,6 +31,11 @@ const DeliveryFromDPK = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+
+  // States untuk Filter
+  const [searchText, setSearchText] = useState("");
+  const [filterDate, setFilterDate] = useState(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [selectedBundlesForSubmit, setSelectedBundlesForSubmit] = useState([]);
@@ -91,6 +101,47 @@ const DeliveryFromDPK = () => {
     }
   };
 
+  // --- LOGIC FILTERING (SEARCH + DATE) ---
+  const filteredData = useMemo(() => {
+    const lowerSearch = searchText.toLowerCase();
+
+    return data
+      .map((bundle) => {
+        // ✅ filter tanggal dari bundle.created
+        const matchesDate =
+          !filterDate ||
+          dayjs(bundle.created).isSame(filterDate, 'day');
+
+        if (!matchesDate) return null;
+
+        // filter shipment hanya berdasarkan text
+        const matchingShipments = bundle.shipments.filter((s) => {
+          if (!searchText) return true;
+
+          return (
+            s.documentno?.toLowerCase().includes(lowerSearch) ||
+            s.customer?.toLowerCase().includes(lowerSearch) ||
+            s.drivername?.toLowerCase().includes(lowerSearch)
+          );
+        });
+
+        // bundle match by text
+        const isBundleMatch =
+          !searchText ||
+          bundle.bundleNo?.toLowerCase().includes(lowerSearch);
+
+        if (isBundleMatch) return bundle;
+
+        if (matchingShipments.length > 0) {
+          return { ...bundle, shipments: matchingShipments };
+        }
+
+        return null;
+      })
+      .filter(Boolean);
+  }, [data, searchText, filterDate]);
+
+
   const handleShipmentCheckChange = (bundleNo, shipmentKey, checked) => {
     setData((prevData) =>
       prevData.map((bundle) => {
@@ -117,8 +168,8 @@ const DeliveryFromDPK = () => {
               let newClickCount = shipment.clickCount + 1;
               let newChecked = shipment.checked;
               if (newClickCount >= 3) {
-                newChecked = false; // reset checked setelah 3 klik
-                newClickCount = 0; // reset counter
+                newChecked = false;
+                newClickCount = 0;
               }
               return {
                 ...shipment,
@@ -150,13 +201,13 @@ const DeliveryFromDPK = () => {
     );
   };
 
-  const bundleCountSelected = data.filter(
+  // Menggunakan filteredData untuk perhitungan counter
+  const bundleCountSelected = filteredData.filter(
     (b) => b.shipments.length > 0 && b.shipments.every((s) => s.arrived),
   ).length;
 
   const handleOpenConfirmModal = () => {
-    // Filter untuk mendapatkan bundle yang SEMUA shipment-nya ditandai 'arrived'
-    const selectedBundles = data.filter(
+    const selectedBundles = filteredData.filter(
       (bundle) =>
         bundle.shipments.length > 0 &&
         bundle.shipments.every((shipment) => shipment.arrived),
@@ -183,7 +234,6 @@ const DeliveryFromDPK = () => {
           ...bundle,
           shipments: bundle.shipments.filter((s) => s.checked),
         }))
-        // Hanya kirim bundle yang masih punya shipment setelah filter
         .filter((bundle) => bundle.shipments.length > 0);
 
       if (filteredBundles.length === 0) {
@@ -197,8 +247,6 @@ const DeliveryFromDPK = () => {
 
       const payload = { data: filteredBundles };
 
-      console.log("New Payload:", payload);
-
       const res = await axios.post(
         `${backEndUrl}/receipt/process/delivery/from/dpk`,
         payload,
@@ -211,6 +259,8 @@ const DeliveryFromDPK = () => {
           description: "Data berhasil diterima.",
         });
         fetchData();
+        setSearchText("");
+        setFilterDate(null);
       } else {
         notification.error({
           message: "Gagal",
@@ -236,7 +286,6 @@ const DeliveryFromDPK = () => {
   };
 
   const handleRejectOk = async () => {
-    console.log("Rejecting item:", itemToReject);
     try {
       const res = await axios.post(`${backEndUrl}/tms/reject`, itemToReject, {
         withCredentials: true,
@@ -245,16 +294,9 @@ const DeliveryFromDPK = () => {
       if (res.data.success) {
         notification.success({
           message: "Info",
-          description: `Dokumen ${itemToReject.documentno} akan diproses untuk direject.`,
+          description: `Dokumen ${itemToReject.documentno} berhasil direject.`,
         });
-        setData((prevData) =>
-          prevData.map((bundle) => ({
-            ...bundle,
-            shipments: bundle.shipments.filter(
-              (s) => s.m_inout_id !== itemToReject.m_inout_id,
-            ),
-          })),
-        );
+        fetchData(); // Refresh data
       } else {
         notification.error({
           message: "Gagal",
@@ -262,10 +304,11 @@ const DeliveryFromDPK = () => {
         });
       }
     } catch (error) {
-      console.error("Submit error:", error);
+      console.log(error);
+
       notification.error({
         message: "Reject Gagal",
-        description: error.response?.data?.message || "Silakan coba lagi.",
+        description: "Silakan coba lagi.",
       });
     } finally {
       setIsModalRejectOpen(false);
@@ -282,23 +325,17 @@ const DeliveryFromDPK = () => {
     return [
       {
         title: (
-          <Popover
-            content={
-              <div>
-                <span>Klik checked 3 untuk melakukan uncheck</span>
-              </div>
-            }
-          >
+          <Popover content="Klik checked 3 untuk melakukan uncheck">
             <span style={{ cursor: "pointer" }}>Check</span>
           </Popover>
         ),
         key: "action",
-        width: 50,
+        width: 100,
         render: (_, record) => {
           if (record.checked) {
             return (
               <span
-                style={{ color: "#389e0d", cursor: "pointer" }}
+                style={{ color: "#389e0d", cursor: "pointer", fontWeight: 'bold' }}
                 onClick={() =>
                   handleShipmentClickCount(record.bundleNo, record.key)
                 }
@@ -320,7 +357,7 @@ const DeliveryFromDPK = () => {
           }
         },
       },
-      { title: "Document No", dataIndex: "documentno", key: "documentno" },
+      { title: "Document No", dataIndex: "documentno", key: "documentno", render: (text) => <b>{text}</b> },
       { title: "Customer", dataIndex: "customer", key: "customer" },
       { title: "Driver", dataIndex: "drivername", key: "drivername" },
       {
@@ -395,7 +432,7 @@ const DeliveryFromDPK = () => {
       dataIndex: "shipments",
       key: "shipments_count",
       align: "center",
-      render: (shipments) => shipments.length,
+      render: (shipments) => <Tag color="blue">{shipments.length} Docs</Tag>,
     },
   ];
 
@@ -408,9 +445,35 @@ const DeliveryFromDPK = () => {
     <DeliveryFromDPKMobile />
   ) : (
     <LayoutGlobal>
+      {/* FILTER SECTION */}
+      <div style={{ marginBottom: 0, background: '#fff', padding: '10px', borderRadius: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+        <Space size="middle">
+          <Input
+            placeholder="Cari SJ / Bundle / Customer / Driver..."
+            prefix={<SearchOutlined />}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={{ width: 350 }}
+            allowClear
+          />
+          <DatePicker
+            placeholder="Filter Tanggal Plan"
+            format="DD-MM-YYYY"
+            onChange={(date) => setFilterDate(date)}
+            value={filterDate}
+            style={{ width: 200 }}
+          />
+          {(searchText || filterDate) && (
+            <Button type="link" onClick={() => { setSearchText(""); setFilterDate(null); }}>
+              Reset Filter
+            </Button>
+          )}
+        </Space>
+      </div>
+
       <Table
         columns={mainColumns}
-        dataSource={data}
+        dataSource={filteredData}
         loading={loading}
         pagination={pagination}
         onChange={(p) => setPagination(p)}
@@ -419,8 +482,7 @@ const DeliveryFromDPK = () => {
           expandedRowRender: (record) => (
             <div
               style={{
-                padding: "8px 24px",
-                margin: 0,
+                padding: "12px 24px",
                 backgroundColor: "#fafafa",
               }}
             >
@@ -429,6 +491,7 @@ const DeliveryFromDPK = () => {
                 dataSource={record.shipments}
                 pagination={false}
                 size="small"
+                bordered
               />
             </div>
           ),
@@ -440,16 +503,19 @@ const DeliveryFromDPK = () => {
       <div
         style={{
           marginTop: 16,
-          padding: "10px",
-          background: "#f0f2f5",
-          borderTop: "1px solid #d9d9d9",
+          padding: "16px",
+          background: "#fff",
+          borderTop: "1px solid #f0f0f0",
+          textAlign: 'right'
         }}
       >
         <Button
           type="primary"
+          size="large"
           onClick={handleOpenConfirmModal}
           disabled={bundleCountSelected === 0 || isSubmitting}
           loading={isSubmitting}
+          style={{ borderRadius: '6px', fontWeight: 'bold' }}
         >
           Accept ({bundleCountSelected} Selected)
         </Button>
@@ -462,19 +528,8 @@ const DeliveryFromDPK = () => {
         onCancel={() => setIsConfirmModalOpen(false)}
         confirmLoading={isSubmitting}
       >
-        <p>
-          Anda akan menyerahkan semua surat jalan dari bundle yang dipilih.
-          Lanjutkan?
-        </p>
-        <div
-          style={{
-            maxHeight: 200,
-            overflowY: "auto",
-            marginTop: 16,
-            border: "1px solid #f0f0f0",
-            padding: "8px",
-          }}
-        >
+        <p>Anda akan menyerahkan semua surat jalan dari bundle yang dipilih. Lanjutkan?</p>
+        <div style={{ maxHeight: 200, overflowY: "auto", marginTop: 16, border: "1px solid #f0f0f0", padding: "8px" }}>
           {selectedBundlesForSubmit.map((bundle) => (
             <div key={bundle.key} style={{ marginBottom: "12px" }}>
               <strong>Bundle: {bundle.bundleNo}</strong>
@@ -494,10 +549,7 @@ const DeliveryFromDPK = () => {
         onOk={handleRejectOk}
         onCancel={handleRejectCancel}
       >
-        <p>
-          Apakah Anda yakin akan mereject dokumen{" "}
-          <strong>{itemToReject?.documentno}</strong>?
-        </p>
+        <p>Apakah Anda yakin akan mereject dokumen <b>{itemToReject?.documentno}</b>?</p>
       </Modal>
     </LayoutGlobal>
   );

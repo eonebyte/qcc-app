@@ -43,6 +43,7 @@ import { Toast } from "antd-mobile";
 import { useState } from "react";
 import PinSetupPopup from "./components/popups/PinSetupPopUp";
 import useIsMobile from "./hooks/useIsMobile";
+import ReloadPrompt from "./components/ReloadPromp";
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 function App() {
@@ -125,6 +126,7 @@ function App() {
   // return <SupplyRawMaterial />;
   return (
     <>
+      <ReloadPrompt />
       <PinSetupPopup
         visible={isPinSetupNeeded}
         onFinish={handlePinSetupSubmit}

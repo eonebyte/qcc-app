@@ -28,7 +28,7 @@ const DPKFromDriver = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
-  
+
   // States untuk Filter
   const [searchText, setSearchText] = useState("");
   const [filterDate, setFilterDate] = useState(null);
@@ -58,8 +58,8 @@ const DPKFromDriver = () => {
             const processedShipments = bundle.shipments.map((shipment) => ({
               ...shipment,
               key: shipment.m_inout_id,
-              checked: false, 
-              clickCount: 0,  
+              checked: false,
+              clickCount: 0,
               bundleNo: bundle.bundleNo,
               arrived: false,
             }));
@@ -97,33 +97,40 @@ const DPKFromDriver = () => {
 
     return data
       .map((bundle) => {
-        // Filter Shipment di dalam bundle berdasarkan teks DAN tanggal
+        // ✅ filter tanggal dari bundle.created
+        const matchesDate =
+          !filterDate ||
+          dayjs(bundle.created).isSame(filterDate, "day");
+
+        if (!matchesDate) return null;
+
+        // filter shipment hanya by text
         const matchingShipments = bundle.shipments.filter((s) => {
-          const matchesText = !searchText || (
-            s.documentno.toLowerCase().includes(lowerSearch) ||
-            s.customer.toLowerCase().includes(lowerSearch)
+          if (!searchText) return true;
+
+          return (
+            s.documentno?.toLowerCase().includes(lowerSearch) ||
+            s.customer?.toLowerCase().includes(lowerSearch)
           );
-
-          const matchesDate = !filterDate || 
-            dayjs(s.plantime).isSame(filterDate, 'day');
-
-          return matchesText && matchesDate;
         });
 
-        // Cek apakah metadata bundle cocok (hanya jika filter tanggal kosong)
-        const isBundleMatch = !filterDate && (
-          bundle.bundleNo.toLowerCase().includes(lowerSearch) ||
-          (bundle.drivername && bundle.drivername.toLowerCase().includes(lowerSearch))
-        );
+        // bundle match by text
+        const isBundleMatch =
+          !searchText ||
+          bundle.bundleNo?.toLowerCase().includes(lowerSearch) ||
+          bundle.drivername?.toLowerCase().includes(lowerSearch);
 
         if (isBundleMatch) return bundle;
+
         if (matchingShipments.length > 0) {
           return { ...bundle, shipments: matchingShipments };
         }
+
         return null;
       })
-      .filter((b) => b !== null);
+      .filter(Boolean);
   }, [data, searchText, filterDate]);
+
 
   // --- HANDLERS ---
   const handleShipmentCheckChange = (bundleNo, shipmentKey, checked) => {
@@ -225,7 +232,7 @@ const DPKFromDriver = () => {
       }
     } catch (error) {
       console.log(error);
-      
+
       notification.error({ message: "Gagal", description: "Terjadi kesalahan." });
     } finally {
       setIsSubmitting(false);
@@ -247,7 +254,7 @@ const DPKFromDriver = () => {
       }
     } catch (err) {
       console.log(err);
-      
+
       notification.error({ message: "Reject Gagal" });
     } finally {
       setIsModalRejectOpen(false);
@@ -359,8 +366,8 @@ const DPKFromDriver = () => {
             style={{ width: 350 }}
             allowClear
           />
-          <DatePicker 
-            placeholder="Filter Tanggal Plan" 
+          <DatePicker
+            placeholder="Filter Tanggal Plan"
             format="DD-MM-YYYY"
             onChange={(date) => setFilterDate(date)}
             value={filterDate}

@@ -5284,11 +5284,11 @@ class TMS {
     }
   }
 
-  async processReject(server, payload) {
+  async processReject(server, payload, userId) {
     let dbClient;
     let oracleConnection;
 
-    const { adw_trackingsj_id } = payload;
+    const { adw_trackingsj_id, notes } = payload;
 
     try {
       dbClient = await server.pg.connect();
@@ -5403,7 +5403,44 @@ class TMS {
             WHERE adw_trackingsj_id = $1
             RETURNING *;
         `;
-      const updated = await dbClient.query(updateQuery, [adw_trackingsj_id]);
+      const updatedRes = await dbClient.query(updateQuery, [adw_trackingsj_id]);
+      const updatedData = updatedRes.rows[0];
+
+      if (updatedData) {
+
+        const usernameQuery = `
+            SELECT name FROM ad_user WHERE ad_user_id = $1
+            RETURNING name;
+        `;
+        const userRes = await dbClient.query(usernameQuery, [userId]);
+        const usernameData = userRes.rows[0];
+
+
+        const insertEventQuery = `
+                INSERT INTO adw_trackingsj_events(
+                    ad_client_id, ad_org_id, username,
+                    adw_event_type, adw_from_actor, adw_to_actor,
+                    adw_trackingsj_id, created, createdby, isactive,
+                    updated, updatedby, checkpoin_id,
+                    notes
+                ) VALUES(
+                    1000003, 1000003, $1,
+                    'REJECT', $2, $3,
+                    $4, NOW(), $5, 'Y',
+                    NOW(), $5, $6, $7
+                );
+            `;
+
+        await dbClient.query(insertEventQuery, [
+          usernameData.name,
+          "Delivery",
+          "MKT",
+          updatedData.adw_trackingsj_id,
+          userId,
+          updatedData.checkpoin_id,
+          notes,
+        ]);
+      }
 
       await dbClient.query("COMMIT");
 
@@ -6120,7 +6157,7 @@ class TMS {
       await client.query('BEGIN');
 
       console.log('log driver name : ', payload.driver_name);
-      
+
 
       // Tentukan apakah Driver dan TNKB layak update berdasarkan ID DAN Nama
       const isDriverValid = payload.driver_id && isValidString(payload.driver_name);

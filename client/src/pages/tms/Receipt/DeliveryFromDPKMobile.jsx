@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   Card,
   Button,
@@ -9,12 +9,16 @@ import {
   Tag,
   AutoCenter,
   PullToRefresh,
+  SearchBar,
+  DatePicker,
+  Space,
 } from "antd-mobile";
 import {
   CheckOutline,
-  CloseOutline,
   CalendarOutline,
   UserOutline,
+  SearchOutline,
+  CloseCircleFill,
 } from "antd-mobile-icons";
 import dayjs from "dayjs";
 import axios from "axios";
@@ -31,6 +35,11 @@ const DeliveryFromDPKMobile = () => {
   const [dataList, setDataList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [activeKey, setActiveKey] = useState([]);
+
+  // --- STATE FILTER ---
+  const [searchText, setSearchText] = useState("");
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [pickerVisible, setPickerVisible] = useState(false);
 
   // --- FETCH DATA ---
   const fetchData = async () => {
@@ -55,7 +64,6 @@ const DeliveryFromDPKMobile = () => {
                 bundleNo: bundle.bundleNo,
               }))
               .filter((shipment) => {
-                // Filter: Checkpoint 4 (Handover) & Ditujukan ke User yg Login
                 if (Number(shipment.checkpoin_id) === 4) {
                   return shipment.driverby === userId;
                 }
@@ -87,15 +95,47 @@ const DeliveryFromDPKMobile = () => {
     fetchData();
   }, []);
 
-  // --- HANDLER CHECK ITEM (CHECKER) ---
+  // --- LOGIC FILTERING (useMemo) ---
+  const filteredData = useMemo(() => {
+    const lowerSearch = searchText.toLowerCase();
+
+    return dataList
+      .map((bundle) => {
+        // Filter shipments di dalam bundle
+        const matchingShipments = bundle.shipments.filter((s) => {
+          const matchesText = !searchText || (
+            s.documentno.toLowerCase().includes(lowerSearch) ||
+            s.customer.toLowerCase().includes(lowerSearch) ||
+            (s.drivername && s.drivername.toLowerCase().includes(lowerSearch))
+          );
+
+          const matchesDate = !selectedDate ||
+            dayjs(s.plantime).isSame(dayjs(selectedDate), 'day');
+
+          return matchesText && matchesDate;
+        });
+
+        // Cek metadata bundle (hanya jika filter tanggal kosong)
+        const isBundleMatch = !selectedDate && bundle.bundleNo.toLowerCase().includes(lowerSearch);
+
+        if (isBundleMatch || matchingShipments.length > 0) {
+          return {
+            ...bundle,
+            shipments: isBundleMatch ? bundle.shipments : matchingShipments
+          };
+        }
+        return null;
+      })
+      .filter((b) => b !== null);
+  }, [dataList, searchText, selectedDate]);
+
+  // --- HANDLERS ---
   const handleShipmentCheck = (bundleNo, shipmentKey) => {
     setDataList((prev) =>
       prev.map((bundle) => {
         if (bundle.bundleNo === bundleNo) {
           const updatedShipments = bundle.shipments.map((s) => {
-            if (s.key === shipmentKey) {
-              return { ...s, checked: true, clickCount: 0 };
-            }
+            if (s.key === shipmentKey) return { ...s, checked: true, clickCount: 0 };
             return s;
           });
           return { ...bundle, shipments: updatedShipments };
@@ -105,7 +145,6 @@ const DeliveryFromDPKMobile = () => {
     );
   };
 
-  // --- HANDLER RESET CHECK (3x CLICK) ---
   const handleShipmentResetCheck = (bundleNo, shipmentKey) => {
     setDataList((prev) =>
       prev.map((bundle) => {
@@ -114,10 +153,7 @@ const DeliveryFromDPKMobile = () => {
             if (s.key === shipmentKey) {
               const newCount = s.clickCount + 1;
               if (newCount >= 3) {
-                Toast.show({
-                  content: "Status di-reset (Unchecked)",
-                  icon: "success",
-                });
+                Toast.show({ content: "Status di-reset", icon: "success" });
                 return { ...s, checked: false, clickCount: 0 };
               }
               return { ...s, clickCount: newCount };
@@ -131,93 +167,46 @@ const DeliveryFromDPKMobile = () => {
     );
   };
 
-  // --- HANDLER BUNDLE SELECTION ---
   const toggleBundleSelection = (bundleNo) => {
     setDataList((prev) =>
       prev.map((bundle) => {
         if (bundle.bundleNo === bundleNo) {
-          const newStatus = !bundle.bundleSelected;
-          return {
-            ...bundle,
-            bundleSelected: newStatus,
-          };
+          return { ...bundle, bundleSelected: !bundle.bundleSelected };
         }
         return bundle;
       }),
     );
   };
 
-  // --- HANDLER REJECT ITEM ---
   const handleRejectItem = (shipment) => {
     Dialog.confirm({
       title: "Konfirmasi Reject",
       content: `Reject dokumen ${shipment.documentno}?`,
-      confirmText: "Reject",
-      cancelText: "Batal",
       onConfirm: async () => {
         try {
-          const res = await axios.post(`${backEndUrl}/tms/reject`, shipment, {
-            withCredentials: true,
-          });
+          const res = await axios.post(`${backEndUrl}/tms/reject`, shipment, { withCredentials: true });
           if (res.data.success) {
             Toast.show({ content: "Dokumen direject", icon: "success" });
-            // Hapus item dari list lokal
-            setDataList((prev) =>
-              prev
-                .map((bundle) => ({
-                  ...bundle,
-                  shipments: bundle.shipments.filter(
-                    (s) => s.key !== shipment.key,
-                  ),
-                }))
-                .filter((b) => b.shipments.length > 0),
-            );
-          } else {
-            Toast.show({
-              content: res.data.message || "Gagal reject",
-              icon: "fail",
-            });
+            fetchData();
           }
         } catch (error) {
           console.log(error);
-          Toast.show({ content: "Error saat reject", icon: "fail" });
+
+          Toast.show({ content: "Error", icon: "fail" });
         }
       },
     });
   };
 
-  // --- HANDLER SUBMIT (ACCEPT) ---
   const handleSubmit = () => {
-    const selectedBundles = dataList.filter((b) => b.bundleSelected);
-
+    const selectedBundles = filteredData.filter((b) => b.bundleSelected);
     if (selectedBundles.length === 0) return;
 
     Dialog.confirm({
-      title: "Konfirmasi Penerimaan",
-      confirmText: "Terima",
-      cancelText: "Batal",
-      content: (
-        <div style={{ maxHeight: "40vh", overflowY: "auto" }}>
-          <p>Terima {selectedBundles.length} Bundle terpilih?</p>
-          <ul
-            style={{
-              paddingLeft: 20,
-              fontSize: 13,
-              textAlign: "left",
-              color: "#666",
-            }}
-          >
-            {selectedBundles.map((b) => (
-              <li key={b.key}>
-                <strong>{b.bundleNo}</strong> ({b.shipments.length} Docs)
-              </li>
-            ))}
-          </ul>
-        </div>
-      ),
+      title: "Konfirmasi",
+      content: `Terima ${selectedBundles.length} Bundle terpilih?`,
       onConfirm: async () => {
         try {
-          // Filter hanya shipment yang checked
           const payloadData = selectedBundles.map((b) => ({
             ...b,
             shipments: b.shipments.filter((s) => s.checked),
@@ -231,19 +220,19 @@ const DeliveryFromDPKMobile = () => {
 
           if (res.data.success) {
             Toast.show({ content: "Berhasil Diterima!", icon: "success" });
+            setSearchText("");
+            setSelectedDate(null);
             fetchData();
-          } else {
-            Toast.show({ content: res.data.message || "Gagal", icon: "fail" });
           }
         } catch (error) {
           console.log(error);
-          Toast.show({ content: "Error saat submit", icon: "fail" });
+
+          Toast.show({ content: "Error", icon: "fail" });
         }
       },
     });
   };
 
-  // --- RENDER BUNDLE ---
   const renderBundle = (bundle) => {
     const allChecked = bundle.shipments.every((s) => s.checked);
 
@@ -262,10 +251,7 @@ const DeliveryFromDPKMobile = () => {
             <div>
               <div style={{ fontWeight: "bold" }}>{bundle.bundleNo}</div>
               <div style={{ fontSize: 12, color: "#888" }}>
-                {bundle.shipments.length} Dokumen •{" "}
-                {dayjs(bundle.created)
-                  .add(7, "hour")
-                  .format("DD-MM-YYYY HH:mm")}
+                {bundle.shipments.length} Dokumen • {dayjs(bundle.created).add(7, "hour").format("DD-MM-YYYY HH:mm")}
               </div>
             </div>
           </div>
@@ -274,23 +260,13 @@ const DeliveryFromDPKMobile = () => {
         <div style={{ background: "#f5f5f5", borderRadius: 8, padding: 8 }}>
           {bundle.shipments.map((item) => (
             <Card key={item.key} style={{ marginBottom: 8, borderRadius: 6 }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                }}
-              >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
-                  <div style={{ fontWeight: "bold" }}>{item.documentno}</div>
-                  <div style={{ fontSize: 13, color: "#666" }}>
-                    {item.customer}
-                  </div>
+                  <div style={{ fontWeight: "bold", color: "#1677ff" }}>{item.documentno}</div>
+                  <div style={{ fontSize: 13, color: "#444" }}>{item.customer}</div>
                   <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
                     <CalendarOutline style={{ marginRight: 4 }} />
-                    {item.plantime
-                      ? dayjs(item.plantime).format("DD-MM-YYYY HH:mm")
-                      : "-"}
+                    {item.plantime ? dayjs(item.plantime).format("DD-MM-YYYY HH:mm") : "-"}
                   </div>
                   {item.drivername && (
                     <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
@@ -299,103 +275,97 @@ const DeliveryFromDPKMobile = () => {
                     </div>
                   )}
                 </div>
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                >
-                  <Button
-                    size="mini"
-                    color="danger"
-                    fill="outline"
-                    onClick={() => handleRejectItem(item)}
-                  >
-                    Reject
-                  </Button>
-
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: 'flex-end' }}>
+                  <Button size="mini" color="danger" fill="none" onClick={() => handleRejectItem(item)}>Reject</Button>
                   {item.checked ? (
-                    <Tag
-                      color="success"
-                      fill="outline"
-                      onClick={() =>
-                        handleShipmentResetCheck(bundle.bundleNo, item.key)
-                      }
-                    >
-                      <CheckOutline style={{ verticalAlign: "middle" }} />{" "}
-                      Checked
+                    <Tag color="success" fill="outline" onClick={() => handleShipmentResetCheck(bundle.bundleNo, item.key)}>
+                      <CheckOutline /> Checked
                     </Tag>
                   ) : (
-                    <Button
-                      size="mini"
-                      color="primary"
-                      onClick={() =>
-                        handleShipmentCheck(bundle.bundleNo, item.key)
-                      }
-                    >
-                      Check
-                    </Button>
+                    <Button size="mini" color="primary" onClick={() => handleShipmentCheck(bundle.bundleNo, item.key)}>Check</Button>
                   )}
                 </div>
               </div>
             </Card>
           ))}
-
-          {!allChecked && (
-            <div
-              style={{
-                fontSize: 12,
-                color: "#faad14",
-                textAlign: "center",
-                marginTop: 8,
-              }}
-            >
-              *Check semua dokumen untuk memilih bundle ini.
-            </div>
-          )}
         </div>
       </Collapse.Panel>
     );
   };
 
-  const selectedCount = dataList.filter((b) => b.bundleSelected).length;
+  const selectedCount = filteredData.filter((b) => b.bundleSelected).length;
 
   return (
     <LayoutGlobalMobile title="Receipt from DPK">
-      <PullToRefresh onRefresh={fetchData}>
-        <div style={{ padding: 12, paddingBottom: 80 }}>
-          {loading && <AutoCenter>Loading...</AutoCenter>}
+      {/* --- STICKY FILTER HEADER --- */}
+      <div style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 10,
+        background: '#fff',
+        padding: '10px 12px',
+        borderBottom: '1px solid #eee',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10
+      }}>
+        <SearchBar
+          placeholder='Cari SJ, Bundle, Customer, Driver...'
+          value={searchText}
+          onChange={setSearchText}
+          onClear={() => setSearchText("")}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Space>
+            <CalendarOutline color="#666" />
+            <span style={{ fontSize: 14 }}>Tgl Plan:</span>
+          </Space>
+          <Space>
+            {selectedDate && (
+              <Button size="mini" fill="none" onClick={() => setSelectedDate(null)} style={{ color: '#ff4d4f', padding: 0 }}>
+                <CloseCircleFill fontSize={18} />
+              </Button>
+            )}
+            <Button size="mini" fill="outline" color="primary" onClick={() => setPickerVisible(true)} style={{ borderRadius: 4 }}>
+              {selectedDate ? dayjs(selectedDate).format("DD MMM YYYY") : "Semua"}
+            </Button>
+          </Space>
+        </div>
+      </div>
 
-          {!loading && dataList.length === 0 && (
-            <AutoCenter style={{ marginTop: 20 }}>
-              Tidak ada data bundle.
+      <DatePicker
+        title='Pilih Tanggal Plan'
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        onConfirm={setSelectedDate}
+      />
+
+      <PullToRefresh onRefresh={fetchData}>
+        <div style={{ padding: 12, paddingBottom: 100, minHeight: '70vh' }}>
+          {loading && <AutoCenter>Loading...</AutoCenter>}
+          {!loading && filteredData.length === 0 && (
+            <AutoCenter style={{ marginTop: 20, flexDirection: 'column', gap: 10 }}>
+              <div style={{ color: "#999" }}>Data tidak ditemukan.</div>
+              {(searchText || selectedDate) && (
+                <Button size="small" onClick={() => { setSearchText(""); setSelectedDate(null); }}>Reset Filter</Button>
+              )}
             </AutoCenter>
           )}
-
-          <Collapse
-            activeKey={activeKey}
-            onChange={setActiveKey}
-            accordion={false}
-          >
-            {dataList.map((bundle) => renderBundle(bundle))}
+          <Collapse activeKey={activeKey} onChange={setActiveKey}>
+            {filteredData.map((bundle) => renderBundle(bundle))}
           </Collapse>
         </div>
       </PullToRefresh>
 
-      {/* --- FLOATING ACCEPT BUTTON --- */}
+      {/* --- FLOATING BUTTON --- */}
       {selectedCount > 0 && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 70,
-            left: 12,
-            right: 12,
-            zIndex: 100,
-          }}
-        >
+        <div style={{ position: "fixed", bottom: 70, left: 12, right: 12, zIndex: 100 }}>
           <Button
             block
             color="primary"
             size="large"
             onClick={handleSubmit}
-            style={{ boxShadow: "0 4px 12px rgba(22, 119, 255, 0.4)" }}
+            style={{ boxShadow: "0 4px 12px rgba(22, 119, 255, 0.4)", borderRadius: 12, fontWeight: 'bold' }}
           >
             Accept ({selectedCount} Bundle)
           </Button>

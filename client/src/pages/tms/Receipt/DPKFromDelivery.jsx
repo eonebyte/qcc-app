@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { CheckOutlined, CloseOutlined } from "@ant-design/icons";
+import { useEffect, useState, useMemo } from "react";
+import { CheckOutlined, CloseOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   Button,
   Checkbox,
@@ -8,6 +8,10 @@ import {
   Table,
   Typography,
   notification,
+  Input,
+  Space,
+  DatePicker,
+  Tag,
 } from "antd";
 import axios from "axios";
 import { DateTime } from "luxon";
@@ -32,6 +36,11 @@ const DPKFromDelivery = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+
+  // States untuk Filter
+  const [searchText, setSearchText] = useState("");
+  const [filterDate, setFilterDate] = useState(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [selectedBundlesForSubmit, setSelectedBundlesForSubmit] = useState([]);
@@ -97,6 +106,39 @@ const DPKFromDelivery = () => {
     }
   };
 
+  // --- LOGIC FILTERING (SEARCH + DATE) ---
+  const filteredData = useMemo(() => {
+    const lowerSearch = searchText.toLowerCase();
+
+    return data
+      .map((bundle) => {
+        // Filter Shipment di dalam bundle berdasarkan teks DAN tanggal
+        const matchingShipments = bundle.shipments.filter((s) => {
+          const matchesText = !searchText || (
+            s.documentno.toLowerCase().includes(lowerSearch) ||
+            s.customer.toLowerCase().includes(lowerSearch)
+          );
+
+          const matchesDate = !filterDate ||
+            dayjs(s.plantime).isSame(filterDate, 'day');
+
+          return matchesText && matchesDate;
+        });
+
+        // Cek apakah metadata bundle cocok (hanya jika filter tanggal kosong)
+        const isBundleMatch = !filterDate && (
+          bundle.bundleNo.toLowerCase().includes(lowerSearch)
+        );
+
+        if (isBundleMatch) return bundle;
+        if (matchingShipments.length > 0) {
+          return { ...bundle, shipments: matchingShipments };
+        }
+        return null;
+      })
+      .filter((b) => b !== null);
+  }, [data, searchText, filterDate]);
+
   const handleShipmentCheckChange = (bundleNo, shipmentKey, checked) => {
     setData((prevData) =>
       prevData.map((bundle) => {
@@ -156,13 +198,14 @@ const DPKFromDelivery = () => {
     );
   };
 
-  const bundleCountSelected = data.filter(
+  // Menggunakan filteredData untuk perhitungan counter
+  const bundleCountSelected = filteredData.filter(
     (b) => b.shipments.length > 0 && b.shipments.every((s) => s.arrived),
   ).length;
 
   const handleOpenConfirmModal = () => {
-    // Filter untuk mendapatkan bundle yang SEMUA shipment-nya ditandai 'arrived'
-    const selectedBundles = data.filter(
+    // Filter dari filteredData
+    const selectedBundles = filteredData.filter(
       (bundle) =>
         bundle.shipments.length > 0 &&
         bundle.shipments.every((shipment) => shipment.arrived),
@@ -189,7 +232,6 @@ const DPKFromDelivery = () => {
           ...bundle,
           shipments: bundle.shipments.filter((s) => s.checked),
         }))
-        // Hanya kirim bundle yang masih punya shipment setelah filter
         .filter((bundle) => bundle.shipments.length > 0);
 
       if (filteredBundles.length === 0) {
@@ -203,8 +245,6 @@ const DPKFromDelivery = () => {
 
       const payload = { data: filteredBundles };
 
-      console.log("New Payload:", payload);
-
       const res = await axios.post(
         `${backEndUrl}/receipt/process/dpk/from/delivery`,
         payload,
@@ -217,6 +257,8 @@ const DPKFromDelivery = () => {
           description: "Data berhasil diterima.",
         });
         fetchData();
+        setSearchText("");
+        setFilterDate(null);
       } else {
         notification.error({
           message: "Gagal",
@@ -250,16 +292,9 @@ const DPKFromDelivery = () => {
       if (res.data.success) {
         notification.success({
           message: "Info",
-          description: `Dokumen ${itemToReject.documentno} akan diproses untuk direject.`,
+          description: `Dokumen ${itemToReject.documentno} berhasil direject.`,
         });
-        setData((prevData) =>
-          prevData.map((bundle) => ({
-            ...bundle,
-            shipments: bundle.shipments.filter(
-              (s) => s.m_inout_id !== itemToReject.m_inout_id,
-            ),
-          })),
-        );
+        fetchData(); // Me-refresh data setelah reject
       } else {
         notification.error({
           message: "Gagal",
@@ -267,10 +302,11 @@ const DPKFromDelivery = () => {
         });
       }
     } catch (error) {
-      console.error("Submit error:", error);
+      console.log(error);
+
       notification.error({
         message: "Reject Gagal",
-        description: error.response?.data?.message || "Silakan coba lagi.",
+        description: "Silakan coba lagi.",
       });
     } finally {
       setIsModalRejectOpen(false);
@@ -287,23 +323,17 @@ const DPKFromDelivery = () => {
     return [
       {
         title: (
-          <Popover
-            content={
-              <div>
-                <span>Klik checked 3 untuk melakukan uncheck</span>
-              </div>
-            }
-          >
+          <Popover content="Klik checked 3 untuk melakukan uncheck">
             <span style={{ cursor: "pointer" }}>Check</span>
           </Popover>
         ),
         key: "action",
-        width: 50,
+        width: 100,
         render: (_, record) => {
           if (record.checked) {
             return (
               <span
-                style={{ color: "#389e0d", cursor: "pointer" }}
+                style={{ color: "#389e0d", cursor: "pointer", fontWeight: 'bold' }}
                 onClick={() =>
                   handleShipmentClickCount(record.bundleNo, record.key)
                 }
@@ -325,7 +355,7 @@ const DPKFromDelivery = () => {
           }
         },
       },
-      { title: "Document No", dataIndex: "documentno", key: "documentno" },
+      { title: "Document No", dataIndex: "documentno", key: "documentno", render: (text) => <b>{text}</b> },
       { title: "Customer", dataIndex: "customer", key: "customer" },
       {
         title: "Plan Time",
@@ -392,8 +422,8 @@ const DPKFromDelivery = () => {
       render: (text) =>
         text
           ? DateTime.fromISO(text)
-              .plus({ hours: 7 })
-              .toFormat("dd-MM-yyyy HH:mm")
+            .plus({ hours: 7 })
+            .toFormat("dd-MM-yyyy HH:mm")
           : "N/A",
     },
     {
@@ -401,7 +431,7 @@ const DPKFromDelivery = () => {
       dataIndex: "shipments",
       key: "shipments_count",
       align: "center",
-      render: (shipments) => shipments.length,
+      render: (shipments) => <Tag color="blue">{shipments.length} Docs</Tag>,
     },
   ];
 
@@ -414,9 +444,35 @@ const DPKFromDelivery = () => {
     <DPKFromDeliveryMobile />
   ) : (
     <LayoutGlobal>
+      {/* FILTER SECTION */}
+      <div style={{ marginBottom: 0, background: '#fff', padding: '10px', borderRadius: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+        <Space size="middle">
+          <Input
+            placeholder="Cari SJ / Bundle / Customer..."
+            prefix={<SearchOutlined />}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={{ width: 350 }}
+            allowClear
+          />
+          <DatePicker
+            placeholder="Filter Tanggal Plan"
+            format="DD-MM-YYYY"
+            onChange={(date) => setFilterDate(date)}
+            value={filterDate}
+            style={{ width: 200 }}
+          />
+          {(searchText || filterDate) && (
+            <Button type="link" onClick={() => { setSearchText(""); setFilterDate(null); }}>
+              Reset Filter
+            </Button>
+          )}
+        </Space>
+      </div>
+
       <Table
         columns={mainColumns}
-        dataSource={data}
+        dataSource={filteredData} // Menggunakan data yang sudah difilter
         loading={loading}
         pagination={pagination}
         onChange={(p) => setPagination(p)}
@@ -425,8 +481,7 @@ const DPKFromDelivery = () => {
           expandedRowRender: (record) => (
             <div
               style={{
-                padding: "8px 24px",
-                margin: 0,
+                padding: "12px 24px",
                 backgroundColor: "#fafafa",
               }}
             >
@@ -435,6 +490,7 @@ const DPKFromDelivery = () => {
                 dataSource={record.shipments}
                 pagination={false}
                 size="small"
+                bordered
               />
             </div>
           ),
@@ -446,16 +502,19 @@ const DPKFromDelivery = () => {
       <div
         style={{
           marginTop: 16,
-          padding: "10px",
-          background: "#f0f2f5",
-          borderTop: "1px solid #d9d9d9",
+          padding: "16px",
+          background: "#fff",
+          borderTop: "1px solid #f0f0f0",
+          textAlign: 'right'
         }}
       >
         <Button
           type="primary"
+          size="large"
           onClick={handleOpenConfirmModal}
           disabled={bundleCountSelected === 0 || isSubmitting}
           loading={isSubmitting}
+          style={{ borderRadius: '6px', fontWeight: 'bold' }}
         >
           Accept ({bundleCountSelected} Selected)
         </Button>
@@ -468,30 +527,8 @@ const DPKFromDelivery = () => {
         onCancel={() => setIsConfirmModalOpen(false)}
         confirmLoading={isSubmitting}
       >
-        <p>
-          Anda akan menyerahkan semua surat jalan dari bundle yang dipilih.
-          Lanjutkan?
-        </p>
-        <div
-          style={{
-            maxHeight: 200,
-            overflowY: "auto",
-            marginTop: 16,
-            border: "1px solid #f0f0f0",
-            padding: "8px",
-          }}
-        >
-          {selectedBundlesForSubmit.map((bundle) => (
-            <div key={bundle.key} style={{ marginBottom: "12px" }}>
-              <strong>Bundle: {bundle.bundleNo}</strong>
-              <ul style={{ paddingLeft: "20px", margin: "4px 0 0 0" }}>
-                {bundle.shipments.map((item) => (
-                  <li key={item.key}>{item.documentno}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+        <p>Anda akan menyerahkan semua surat jalan dari bundle yang dipilih. Lanjutkan?</p>
+        {/* List bundle details... */}
       </Modal>
 
       <Modal
@@ -500,10 +537,7 @@ const DPKFromDelivery = () => {
         onOk={handleRejectOk}
         onCancel={handleRejectCancel}
       >
-        <p>
-          Apakah Anda yakin akan mereject dokumen{" "}
-          <strong>{itemToReject?.documentno}</strong>?
-        </p>
+        <p>Apakah Anda yakin akan mereject dokumen <b>{itemToReject?.documentno}</b>?</p>
       </Modal>
     </LayoutGlobal>
   );

@@ -10,14 +10,15 @@ import {
   AutoCenter,
   PullToRefresh,
   SpinLoading,
-  DatePicker, // Import DatePicker
+  DatePicker,
   Space,
+  SearchBar, // Import SearchBar
 } from "antd-mobile";
 import {
   CheckOutline,
   FileOutline,
   CalendarOutline,
-  FilterOutline, // Icon Filter
+  SearchOutline,
   CloseCircleFill,
 } from "antd-mobile-icons";
 import dayjs from "dayjs";
@@ -35,7 +36,8 @@ const DPKFromDeliveryMobile = () => {
   const [loading, setLoading] = useState(false);
   const [activeKey, setActiveKey] = useState([]);
 
-  // --- STATE FILTER TANGGAL ---
+  // --- STATE FILTER ---
+  const [searchText, setSearchText] = useState(""); // State Search
   const [selectedDate, setSelectedDate] = useState(null);
   const [pickerVisible, setPickerVisible] = useState(false);
 
@@ -81,7 +83,6 @@ const DPKFromDeliveryMobile = () => {
       }
     } catch (err) {
       console.log(err);
-
       Toast.show({ content: "Gagal mengambil data", icon: "fail" });
     } finally {
       setLoading(false);
@@ -92,19 +93,42 @@ const DPKFromDeliveryMobile = () => {
     fetchData();
   }, []);
 
-  // --- LOGIC FILTERING ---
+  // --- LOGIC FILTERING (SEARCH & DATE) ---
   const filteredData = useMemo(() => {
-    if (!selectedDate) return dataList;
+    const lowerSearch = searchText.toLowerCase();
 
-    return dataList.filter((bundle) => {
-      // Bandingkan tanggal bundle.created dengan selectedDate
-      // Kita gunakan startOf('day') agar jam tidak mempengaruhi perbandingan
-      return dayjs(bundle.created).isSame(dayjs(selectedDate), 'day');
-    });
-  }, [dataList, selectedDate]);
+    return dataList
+      .map((bundle) => {
+        // Filter shipments di dalam bundle
+        const matchingShipments = bundle.shipments.filter((s) => {
+          const matchesText = !searchText || (
+            s.documentno.toLowerCase().includes(lowerSearch) ||
+            s.customer.toLowerCase().includes(lowerSearch)
+          );
+
+          // Filter Tanggal berdasarkan plantime (sesuai logika web)
+          const matchesDate = !selectedDate ||
+            dayjs(s.plantime).isSame(dayjs(selectedDate), 'day');
+
+          return matchesText && matchesDate;
+        });
+
+        // Cek metadata bundle (hanya jika filter tanggal kosong)
+        const isBundleMatch = !selectedDate && bundle.bundleNo.toLowerCase().includes(lowerSearch);
+
+        if (isBundleMatch || matchingShipments.length > 0) {
+          return {
+            ...bundle,
+            shipments: isBundleMatch ? bundle.shipments : matchingShipments
+          };
+        }
+        return null;
+      })
+      .filter((b) => b !== null);
+  }, [dataList, searchText, selectedDate]);
 
 
-  // --- HANDLERS (Sama seperti sebelumnya) ---
+  // --- HANDLERS ---
   const handleShipmentCheck = (bundleNo, shipmentKey) => {
     setDataList((prev) =>
       prev.map((bundle) => {
@@ -161,8 +185,6 @@ const DPKFromDeliveryMobile = () => {
     Dialog.confirm({
       title: "Konfirmasi Reject",
       content: `Reject dokumen ${shipment.documentno}?`,
-      confirmText: 'Submit',
-      cancelText: 'Batal',
       onConfirm: async () => {
         try {
           const res = await axios.post(`${backEndUrl}/tms/reject`, shipment, { withCredentials: true });
@@ -180,7 +202,8 @@ const DPKFromDeliveryMobile = () => {
   };
 
   const handleSubmit = () => {
-    const selectedBundles = dataList.filter((b) => b.bundleSelected);
+    // Gunakan filteredData agar yang terkirim hanya yang tampak saat ini
+    const selectedBundles = filteredData.filter((b) => b.bundleSelected);
     if (selectedBundles.length === 0) return;
 
     Dialog.confirm({
@@ -191,10 +214,13 @@ const DPKFromDeliveryMobile = () => {
           const payloadData = selectedBundles.map((b) => ({
             ...b,
             shipments: b.shipments.filter((s) => s.checked),
-          }));
+          })).filter(b => b.shipments.length > 0);
+
           const res = await axios.post(`${backEndUrl}/receipt/process/dpk/from/delivery`, { data: payloadData }, { withCredentials: true });
           if (res.data.success) {
             Toast.show({ content: "Berhasil!", icon: "success" });
+            setSearchText("");
+            setSelectedDate(null);
             fetchData();
           }
         } catch (error) {
@@ -271,43 +297,51 @@ const DPKFromDeliveryMobile = () => {
         padding: '10px 12px',
         borderBottom: '1px solid #eee',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between'
+        flexDirection: 'column',
+        gap: 10
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FilterOutline color="#666" />
-          <span style={{ fontSize: 14, fontWeight: 500, color: '#333' }}>Filter Tanggal:</span>
-        </div>
+        <SearchBar
+          placeholder='Cari SJ, Bundle, Customer...'
+          value={searchText}
+          onChange={val => setSearchText(val)}
+          onClear={() => setSearchText("")}
+        />
 
-        <Space>
-          {selectedDate && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Space>
+            <CalendarOutline color="#666" />
+            <span style={{ fontSize: 14 }}>Tanggal:</span>
+          </Space>
+
+          <Space>
+            {selectedDate && (
+              <Button
+                size="mini"
+                fill="none"
+                onClick={() => setSelectedDate(null)}
+                style={{ color: '#ff4d4f', padding: 0 }}
+              >
+                <CloseCircleFill fontSize={18} />
+              </Button>
+            )}
             <Button
               size="mini"
-              fill="none"
-              onClick={() => setSelectedDate(null)}
-              style={{ color: '#ff4d4f', padding: 0 }}
+              fill="outline"
+              color="primary"
+              onClick={() => setPickerVisible(true)}
+              style={{ borderRadius: 4 }}
             >
-              <CloseCircleFill fontSize={18} />
+              {selectedDate ? dayjs(selectedDate).format("DD MMM YYYY") : "Semua Tanggal"}
             </Button>
-          )}
-          <Button
-            size="small"
-            fill="outline"
-            color="primary"
-            onClick={() => setPickerVisible(true)}
-            style={{ borderRadius: 6, fontSize: 13 }}
-          >
-            {selectedDate ? dayjs(selectedDate).format("DD MMM YYYY") : "Pilih Tanggal"}
-          </Button>
-        </Space>
+          </Space>
+        </div>
       </div>
 
       <DatePicker
-        title='Pilih Tanggal'
+        title='Pilih Tanggal Plan'
         visible={pickerVisible}
         onClose={() => setPickerVisible(false)}
         onConfirm={val => setSelectedDate(val)}
-        max={new Date()} // Tidak bisa pilih tanggal masa depan
       />
 
       <PullToRefresh onRefresh={fetchData}>
@@ -318,12 +352,10 @@ const DPKFromDeliveryMobile = () => {
             <AutoCenter style={{ marginTop: 40, flexDirection: 'column', gap: 12 }}>
               <FileOutline fontSize={48} color="#ccc" />
               <div style={{ color: "#999" }}>
-                {selectedDate
-                  ? `Tidak ada data pada ${dayjs(selectedDate).format("DD/MM/YYYY")}`
-                  : "Tidak ada data bundle."}
+                Tidak ada data ditemukan.
               </div>
-              {selectedDate && (
-                <Button size="small" onClick={() => setSelectedDate(null)}>Lihat Semua</Button>
+              {(searchText || selectedDate) && (
+                <Button size="small" onClick={() => { setSearchText(""); setSelectedDate(null); }}>Reset Filter</Button>
               )}
             </AutoCenter>
           )}
@@ -335,7 +367,7 @@ const DPKFromDeliveryMobile = () => {
       </PullToRefresh>
 
       {/* --- FLOATING BUTTON --- */}
-      {dataList.filter(b => b.bundleSelected).length > 0 && (
+      {filteredData.filter(b => b.bundleSelected).length > 0 && (
         <div style={{ position: "fixed", bottom: 70, left: 12, right: 12, zIndex: 100 }}>
           <Button
             block
@@ -344,7 +376,7 @@ const DPKFromDeliveryMobile = () => {
             onClick={handleSubmit}
             style={{ boxShadow: "0 4px 12px rgba(22, 119, 255, 0.4)", borderRadius: 12, fontWeight: 'bold' }}
           >
-            Accept ({dataList.filter(b => b.bundleSelected).length} Bundle)
+            Accept ({filteredData.filter(b => b.bundleSelected).length} Bundle)
           </Button>
         </div>
       )}
