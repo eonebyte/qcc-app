@@ -13,12 +13,14 @@ import {
   Form,
   Input,
   Toast,
+  TextArea,
 } from "antd-mobile";
 import {
   UserOutline,
   RightOutline,
   KeyOutline,
-  EditSOutline, // Icon baru untuk edit username
+  EditSOutline,
+  SetOutline, // Icon untuk Reset/Pindah Device
 } from "antd-mobile-icons";
 import { LogoutOutlined } from '@ant-design/icons';
 
@@ -27,7 +29,7 @@ import axios from "axios";
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 import LayoutGlobalMobile from "../components/layouts/LayoutGlobalMobile";
-import { logout } from "../states/reducers/authSlice";
+import { logout, logoutfull } from "../states/reducers/authSlice";
 
 const AccountMobile = () => {
   const dispatch = useDispatch();
@@ -35,12 +37,59 @@ const AccountMobile = () => {
 
   // --- STATE ---
   const [isPassModalVisible, setIsPassModalVisible] = useState(false);
-  const [isUserModalVisible, setIsUserModalVisible] = useState(false); // State Modal Username
+  const [isUserModalVisible, setIsUserModalVisible] = useState(false);
 
   const [formPass] = Form.useForm();
-  const [formUser] = Form.useForm(); // Form Instance Username
+  const [formUser] = Form.useForm();
 
   const { user, isLoading } = useSelector((state) => state.auth);
+
+  // --- LOGIC RESET APP / PINDAH DEVICE (HAPUS COOKIE & CACHE) ---
+  const handleResetApp = () => {
+    Modal.confirm({
+      title: "Pindah Device / Reset Total",
+      content: "Aplikasi akan menghapus seluruh COOKIE, cache, data login, dan memuat ulang. Gunakan ini jika ingin ganti device atau aplikasi error. Lanjutkan?",
+      confirmText: "Ya, Reset Total",
+      cancelText: "Batal",
+      confirmButtonColor: "danger",
+      onConfirm: async () => {
+        try {
+          // 1. Logout dari Server (Menghapus session HttpOnly di server)
+          await dispatch(logout());
+          await dispatch(logoutfull());
+
+          localStorage.clear();
+          sessionStorage.clear();
+
+          // 4. Bersihkan Cache Storage PWA (File-file website yang tersimpan di HP)
+          if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            await Promise.all(
+              cacheNames.map(name => caches.delete(name))
+            );
+          }
+
+          // 5. Unregister Service Workers
+          if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (let registration of registrations) {
+              await registration.unregister();
+            }
+          }
+
+          Toast.show({ content: 'Pembersihan selesai, memuat ulang...', duration: 1500 });
+
+          // 6. Hard Reload (Memaksa browser mengambil file baru dari server)
+          setTimeout(() => {
+            window.location.href = "/";
+          }, 1500);
+        } catch (error) {
+          console.error("Reset Error:", error);
+          window.location.href = "/";
+        }
+      },
+    });
+  };
 
   // --- LOGIC GANTI PASSWORD ---
   const handleSubmitPassword = async (values) => {
@@ -76,19 +125,12 @@ const AccountMobile = () => {
         Toast.show({ icon: 'success', content: 'Username berhasil diganti!' });
         setIsUserModalVisible(false);
         formUser.resetFields();
-
-        // Refresh halaman agar Redux state / Tampilan Header terupdate
-        // Atau jika Anda punya action updateProfile, dispatch di sini.
         setTimeout(() => {
           window.location.reload();
         }, 1000);
       }
     } catch (error) {
-      console.error(error);
-      Toast.show({
-        icon: 'fail',
-        content: error.response?.data?.message || 'Gagal mengganti username',
-      });
+      Toast.show({ icon: 'fail', content: error.response?.data?.message || 'Gagal' });
     }
   };
 
@@ -139,7 +181,6 @@ const AccountMobile = () => {
       >
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
           <Avatar
-            src=""
             style={{
               "--size": "80px",
               "--border-radius": "50%",
@@ -163,13 +204,10 @@ const AccountMobile = () => {
       </div>
 
       <Card style={{ borderRadius: 12 }}>
-        <List header="Pengaturan">
-
-          {/* MENU UBAH USERNAME */}
+        <List header="Pengaturan Profil">
           <List.Item
             prefix={<EditSOutline />}
             onClick={() => {
-              // Set initial value form dengan username saat ini
               formUser.setFieldsValue({ newUsername: user?.value || user?.username });
               setIsUserModalVisible(true);
             }}
@@ -178,13 +216,24 @@ const AccountMobile = () => {
             Ubah Username
           </List.Item>
 
-          {/* MENU UBAH PASSWORD */}
           <List.Item
             prefix={<KeyOutline />}
             onClick={() => setIsPassModalVisible(true)}
             clickable
           >
             Ubah Password
+          </List.Item>
+        </List>
+
+        <List header="Aplikasi & Perangkat" style={{ marginTop: 10 }}>
+          {/* TOMBOL RESET TOTAL */}
+          <List.Item
+            prefix={<SetOutline style={{ color: "#ff8f1f" }} />}
+            onClick={handleResetApp}
+            clickable
+            description="Hapus Cookie & Cache jika ingin ganti HP / Akun"
+          >
+            <span style={{ color: "#ff8f1f", fontWeight: "bold" }}>Pindah Device / Reset</span>
           </List.Item>
 
           <List.Item
@@ -242,17 +291,10 @@ const AccountMobile = () => {
               </div>
             }
           >
-            <div style={{ marginBottom: 15, fontSize: 12, color: '#666', background: '#f5f5f5', padding: 8, borderRadius: 4 }}>
-              Username digunakan untuk Login. Pastikan unik dan tidak mengandung spasi.
-            </div>
             <Form.Item
               label="Username Baru"
               name="newUsername"
-              rules={[
-                { required: true, message: 'Harap isi username' },
-                { min: 3, message: 'Minimal 3 karakter' },
-                { pattern: /^\S*$/, message: 'Tidak boleh ada spasi' }
-              ]}
+              rules={[{ required: true, message: 'Harap isi username' }]}
             >
               <Input placeholder="Masukkan username baru" clearable />
             </Form.Item>

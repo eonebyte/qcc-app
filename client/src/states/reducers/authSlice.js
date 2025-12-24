@@ -54,6 +54,20 @@ export const logout = createAsyncThunk(
   },
 );
 
+export const logoutfull = createAsyncThunk(
+  "auth/logout/full",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(`${backEndUrl}/auth/logout/full`, {
+        withCredentials: true,
+      });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || "Logout failed");
+    }
+  },
+);
+
 
 
 // authSlice
