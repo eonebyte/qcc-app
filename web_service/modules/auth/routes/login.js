@@ -197,11 +197,12 @@ export default async function (fastify, options) {
         // 4. Set Cookie
         const opts = {
           path: "/",
-          httpOnly: true,
+          httpOnly: false,
           secure: false,
-          sameSite: "lax",
-          maxAge: 31536000,
         };
+
+        request.session.set("user", userFound);
+
         reply.setCookie("device_id", newDeviceId, opts);
         reply.setCookie("saved_username", userFound.name, opts);
 

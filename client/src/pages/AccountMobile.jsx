@@ -29,7 +29,7 @@ import axios from "axios";
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 import LayoutGlobalMobile from "../components/layouts/LayoutGlobalMobile";
-import { logout, logoutfull } from "../states/reducers/authSlice";
+import { logout } from "../states/reducers/authSlice";
 
 const AccountMobile = () => {
   const dispatch = useDispatch();
@@ -44,6 +44,20 @@ const AccountMobile = () => {
 
   const { user, isLoading } = useSelector((state) => state.auth);
 
+  const clearClientCookie = (name) => {
+    // 1. Ambil hostname (localhost atau api-sts.adyawinsa.com)
+    const domain = window.location.hostname;
+
+    // 2. Hapus dengan path standar
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+
+    // 3. Hapus dengan domain spesifik (karena di login Anda set domain secara eksplisit)
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${domain};`;
+
+    // 4. Jika menggunakan domain dengan titik di depan (subdomain)
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${domain};`;
+  };
+
   // --- LOGIC RESET APP / PINDAH DEVICE (HAPUS COOKIE & CACHE) ---
   const handleResetApp = () => {
     Modal.confirm({
@@ -56,7 +70,9 @@ const AccountMobile = () => {
         try {
           // 1. Logout dari Server (Menghapus session HttpOnly di server)
           await dispatch(logout());
-          await dispatch(logoutfull());
+
+          const cookiesToDelete = ["device_id", "saved_username"];
+          cookiesToDelete.forEach(name => clearClientCookie(name));
 
           localStorage.clear();
           sessionStorage.clear();
