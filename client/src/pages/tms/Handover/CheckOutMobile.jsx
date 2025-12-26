@@ -48,6 +48,8 @@ export default function CheckOutMobile() {
   const [itemToCancel, setItemToCancel] = useState(null);
   const [noteCancel, setNoteCancel] = useState("");
 
+  const [searchDropOnly, setSearchDropOnly] = useState(""); // State baru untuk filter di popup
+
   // --- FETCH DATA ---
   const fetchData = async () => {
     setLoading(true);
@@ -81,6 +83,15 @@ export default function CheckOutMobile() {
       setLoading(false);
     }
   };
+
+  const filteredDropOnly = tableDataDropOnly.filter(item => {
+    const lower = searchDropOnly.toLowerCase();
+    return (
+      item.documentno?.toLowerCase().includes(lower) ||
+      item.customer?.toLowerCase().includes(lower) ||
+      item.customerkey?.toLowerCase().includes(lower)
+    );
+  });
 
   const fetchDataDropOnly = async () => {
     try {
@@ -135,7 +146,8 @@ export default function CheckOutMobile() {
     return tableData.filter(
       (item) =>
         (item.documentno && item.documentno.toLowerCase().includes(lower)) ||
-        (item.customer && item.customer.toLowerCase().includes(lower)),
+        (item.customer && item.customer.toLowerCase().includes(lower)) ||
+        (item.customerkey && item.customerkey.toLowerCase().includes(lower)),
     );
   };
 
@@ -276,7 +288,7 @@ export default function CheckOutMobile() {
                         {item.documentno}
                       </div>
                       <div style={{ color: "#666", fontSize: 13 }}>
-                        <TruckOutline /> {item.customer}
+                        <TruckOutline /> {item.customerkey} ({item.customer})
                       </div>
                       <div style={{ color: "#888", fontSize: 12 }}>
                         {item.plantimeFormatted}
@@ -336,12 +348,14 @@ export default function CheckOutMobile() {
         visible={isPopupOpen}
         onMaskClick={() => setIsPopupOpen(false)}
         bodyStyle={{
-          minHeight: "60vh",
           borderTopLeftRadius: 16,
           borderTopRightRadius: 16,
+          maxHeight: '80vh', // Batasi tinggi maksimal popup agar tidak full screen
+          display: 'flex',
+          flexDirection: 'column'
         }}
       >
-        <div style={{ padding: 16, paddingBottom: 50 }}>
+        <div style={{ padding: 16, overflowY: 'auto' }}> {/* Container utama popup yang bisa scroll */}
           <div
             style={{
               textAlign: "center",
@@ -353,77 +367,113 @@ export default function CheckOutMobile() {
             Confirm Submission
           </div>
 
-          {selectedRows.map((r, i) => (
-            <div
-              key={r.key}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "8px 0",
-                borderBottom: "1px solid #f0f0f0",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <CheckCircleOutline color="var(--adm-color-success)" />
-                <b>{r.documentno}</b>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12 }}>
-                  {r.tripMode === "RT" ? "ROUND TRIP" : "DROP ONLY"}
-                </span>
-                <Switch
-                  checked={r.tripMode === "RT"}
-                  onChange={(c) => {
-                    const up = [...selectedRows];
-                    up[i].tripMode = c ? "RT" : "DO";
-                    setSelectedRows(up);
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-
-          <div
-            style={{
-              marginTop: 20,
-              background: "#fafafa",
-              padding: 10,
-              borderRadius: 8,
-            }}
-          >
-            <div style={{ fontWeight: "bold", marginBottom: 5 }}>
-              SJ masih di Customer (pilih untuk diambil):
-            </div>
-            {tableDataDropOnly.map((d) => (
+          {/* Section: Selected Rows (Utama) */}
+          <div style={{ marginBottom: 20 }}>
+            {selectedRows.map((r, i) => (
               <div
-                key={d.key}
-                onClick={() => toggleSelectionDropOnly(d)}
+                key={r.key}
                 style={{
                   display: "flex",
-                  gap: 10,
-                  padding: "8px 0",
-                  borderBottom: "1px solid #eee",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "10px 0",
+                  borderBottom: "1px solid #f0f0f0",
                 }}
               >
-                <Checkbox
-                  checked={selectedRowsDropOnly.some((x) => x.key === d.key)}
-                />
-                <div>
-                  <div style={{ fontWeight: 500 }}>{d.documentno}</div>
-                  <div style={{ fontSize: 12, color: "#888" }}>
-                    {d.customer}
-                  </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <CheckCircleOutline color="var(--adm-color-success)" />
+                  <b style={{ fontSize: 14 }}>{r.documentno}</b>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 11, color: '#666' }}>
+                    {r.tripMode === "RT" ? "ROUND TRIP" : "DROP ONLY"}
+                  </span>
+                  <Switch
+                    checked={r.tripMode === "RT"}
+                    onChange={(c) => {
+                      const up = [...selectedRows];
+                      up[i].tripMode = c ? "RT" : "DO";
+                      setSelectedRows(up);
+                    }}
+                  />
                 </div>
               </div>
             ))}
           </div>
 
-          <div style={{ marginTop: 24, display: "flex", gap: 10 }}>
-            <Button block flex={1} onClick={() => setIsPopupOpen(false)}>
-              Cancel
+          {/* Section: Drop Only (List yang dibatasi tingginya) */}
+          <div
+            style={{
+              background: "#f5f5f5",
+              padding: 12,
+              borderRadius: 12,
+              border: '1px solid #eee'
+            }}
+          >
+            <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: 14 }}>
+              SJ masih di Customer (Ambil):
+            </div>
+
+            {/* SEARCH BAR KHUSUS DROP ONLY */}
+            <div style={{ marginBottom: 10 }}>
+              <SearchBar
+                placeholder='Cari SJ atau Customer...'
+                value={searchDropOnly}
+                onChange={setSearchDropOnly}
+                style={{ '--background': '#ffffff', borderRadius: 6 }}
+              />
+            </div>
+
+            {/* WRAPPER SCROLL */}
+            <div
+              style={{
+                maxHeight: "180px", // Membatasi tinggi
+                overflowY: "auto",  // Scroll jika data banyak
+                paddingRight: 4
+              }}
+            >
+              {filteredDropOnly.length === 0 ? (
+                <div style={{ fontSize: 12, color: '#999', textAlign: 'center', padding: '10px 0' }}>
+                  {searchDropOnly ? "Data tidak ditemukan" : "Tidak ada data SJ di customer"}
+                </div>
+              ) : (
+                filteredDropOnly.map((d) => (
+                  <div
+                    key={d.key}
+                    onClick={() => toggleSelectionDropOnly(d)}
+                    style={{
+                      display: "flex",
+                      gap: 12,
+                      padding: "10px 8px",
+                      marginBottom: 6,
+                      background: "#fff",
+                      borderRadius: 8,
+                      border: selectedRowsDropOnly.some((x) => x.key === d.key)
+                        ? '1px solid var(--adm-color-primary)'
+                        : '1px solid transparent'
+                    }}
+                  >
+                    <Checkbox
+                      checked={selectedRowsDropOnly.some((x) => x.key === d.key)}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{d.documentno}</div>
+                      <div style={{ fontSize: 11, color: "#888" }}>
+                        {d.customerkey} ({d.customer})
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Tombol Action (Sticky di bawah konten popup) */}
+          <div style={{ marginTop: 24, display: "flex", gap: 12, paddingBottom: 10 }}>
+            <Button block flex={1} onClick={() => setIsPopupOpen(false)} style={{ borderRadius: 8 }}>
+              Batal
             </Button>
-            <Button block flex={1} color="primary" onClick={handleSubmit}>
+            <Button block flex={1} color="primary" onClick={handleSubmit} style={{ borderRadius: 8 }}>
               Submit
             </Button>
           </div>

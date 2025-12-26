@@ -707,6 +707,7 @@ class Handover {
                 mi.M_INOUT_ID,
                 mi.DOCUMENTNO,
                 cb.NAME AS CUSTOMER,
+                cb.VALUE AS CUSTOMERKEY,
                 TO_DATE(
                     TO_CHAR(mi.MOVEMENTDATE, 'YYYY-MM-DD') || ' ' ||
                     TO_CHAR(mi.PLANTIME, 'HH24:MI:SS'),
@@ -735,6 +736,7 @@ class Handover {
           m_inout_id: row.M_INOUT_ID,
           documentno: row.DOCUMENTNO,
           customer: row.CUSTOMER,
+          customerkey: row.CUSTOMERKEY,
           plantime: row.PLANTIME,
           checkpoin_id: 5,
           adw_trackingsj_id: pgInfo.adw_trackingsj_id || null,
