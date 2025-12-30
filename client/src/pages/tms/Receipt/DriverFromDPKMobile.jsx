@@ -36,11 +36,11 @@ const DriverFromDPKMobile = () => {
   const [loading, setLoading] = useState(false);
   const [activeKey, setActiveKey] = useState([]);
   const [searchText, setSearchText] = useState("");
-  
+
   // Filter Tanggal
   const [filterDate, setFilterDate] = useState(null);
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -104,8 +104,8 @@ const DriverFromDPKMobile = () => {
             s.customerkey?.toLowerCase().includes(lowerSearch) ||
             s.customer?.toLowerCase().includes(lowerSearch)
           );
-          
-          const matchesDate = !filterDate || 
+
+          const matchesDate = !filterDate ||
             dayjs(s.plantime).format('YYYY-MM-DD') === dayjs(filterDate).format('YYYY-MM-DD');
 
           return matchesText && matchesDate;
@@ -125,12 +125,14 @@ const DriverFromDPKMobile = () => {
 
   // Auto expand saat mencari atau filter tanggal
   useEffect(() => {
+    // Hanya buka panel otomatis jika ada teks pencarian atau filter tanggal
     if (searchText || filterDate) {
-      setActiveKey(filteredData.map((b) => b.key));
-    } else {
-        setActiveKey([]);
+      const keys = filteredData.map((b) => b.key);
+      setActiveKey(keys);
     }
-  }, [searchText, filterDate, filteredData]);
+    // Jangan tambahkan 'else { setActiveKey([]) }' karena akan menutup panel 
+    // setiap kali data di-update (seperti saat klik checkbox)
+  }, [searchText, filterDate]);
 
   // --- HANDLER CHECK SATUAN (Logic 3 Klik) ---
   const handleShipmentClick = (bundleNo, shipmentKey) => {
@@ -200,6 +202,7 @@ const DriverFromDPKMobile = () => {
             fetchData();
           }
         } catch (error) {
+          console.log(error);
           Toast.show({ content: "Gagal reject", icon: "fail" });
         }
       },
@@ -238,6 +241,7 @@ const DriverFromDPKMobile = () => {
             setFilterDate(null);
           }
         } catch (error) {
+          console.log(error);
           Toast.show({ content: "Gagal memproses", icon: "fail" });
         } finally {
           setIsSubmitting(false);
@@ -255,11 +259,16 @@ const DriverFromDPKMobile = () => {
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div onClick={(e) => e.stopPropagation()}>
-              <Checkbox
-                checked={bundle.bundleSelected}
-                disabled={!allShipmentsChecked}
-                onChange={() => toggleBundleSelection(bundle.bundleNo)}
-              />
+              <div
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()} // Tambahan untuk mobile
+              >
+                <Checkbox
+                  checked={bundle.bundleSelected}
+                  disabled={!allShipmentsChecked}
+                  onChange={() => toggleBundleSelection(bundle.bundleNo)}
+                />
+              </div>
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: "600", fontSize: 15 }}>{bundle.bundleNo}</div>
@@ -298,8 +307,8 @@ const DriverFromDPKMobile = () => {
                   </div>
 
                   <div style={{ fontSize: 14, fontWeight: "700", color: "#333", marginBottom: 6 }}>
-                     <Tag color='primary' fill='outline' style={{marginRight: 6}}>{item.customerkey}</Tag>
-                     {item.customer}
+                    <Tag color='primary' fill='outline' style={{ marginRight: 6 }}>{item.customerkey}</Tag>
+                    {item.customer}
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#888" }}>
@@ -344,35 +353,35 @@ const DriverFromDPKMobile = () => {
       {/* STICKY SEARCH & FILTER DATE */}
       <div style={{ position: "sticky", top: 0, zIndex: 99, background: "#fff", padding: "12px", borderBottom: "1px solid #eee" }}>
         <Space direction="vertical" block>
-            <div style={{ display: 'flex', gap: 8 }}>
-                <div style={{ flex: 1 }}>
-                    <SearchBar
-                    placeholder="Cari No SJ / Bundle / Customer..."
-                    value={searchText}
-                    onChange={setSearchText}
-                    style={{ "--border-radius": "8px", "--background": "#f0f0f0" }}
-                    />
-                </div>
-                <Button 
-                    onClick={() => setIsDatePickerVisible(true)}
-                    style={{ borderRadius: 8, background: filterDate ? '#e6f7ff' : '#f0f0f0', border: 'none' }}
-                >
-                    <CalendarOutline fontSize={20} color={filterDate ? '#1677ff' : '#666'} />
-                </Button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <SearchBar
+                placeholder="Cari No SJ / Bundle / Customer..."
+                value={searchText}
+                onChange={setSearchText}
+                style={{ "--border-radius": "8px", "--background": "#f0f0f0" }}
+              />
             </div>
+            <Button
+              onClick={() => setIsDatePickerVisible(true)}
+              style={{ borderRadius: 8, background: filterDate ? '#e6f7ff' : '#f0f0f0', border: 'none' }}
+            >
+              <CalendarOutline fontSize={20} color={filterDate ? '#1677ff' : '#666'} />
+            </Button>
+          </div>
 
-            {/* Chip Filter Tanggal Aktif */}
-            {filterDate && (
-                <Tag 
-                    color='primary' 
-                    fill='outline' 
-                    style={{ borderRadius: 12, padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                    onClick={() => setFilterDate(null)}
-                >
-                    Tanggal: {dayjs(filterDate).format('DD MMM YYYY')}
-                    <CloseCircleFill fontSize={14} />
-                </Tag>
-            )}
+          {/* Chip Filter Tanggal Aktif */}
+          {filterDate && (
+            <Tag
+              color='primary'
+              fill='outline'
+              style={{ borderRadius: 12, padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              onClick={() => setFilterDate(null)}
+            >
+              Tanggal: {dayjs(filterDate).format('DD MMM YYYY')}
+              <CloseCircleFill fontSize={14} />
+            </Tag>
+          )}
         </Space>
       </div>
 
