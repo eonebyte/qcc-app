@@ -23,6 +23,18 @@ export default async (server, opts) => {
         }
     });
 
+    server.post('/process/dpk/to/driver/bypass', async (request, reply) => {
+        try {
+            const body = request.body;
+            const userId = request.user.ad_user_id;
+            const to_dpk = await server.handover.processDPKToDriverByPass(server, body, userId);
+            reply.send({ message: 'fetch successfully', data: to_dpk });
+        } catch (error) {
+            request.log.error(error);
+            reply.status(500).send({ message: `Failed: ${error.message || error}` });
+        }
+    });
+
     server.post('/process/driver/to/customer', async (request, reply) => {
         try {
             const body = request.body;

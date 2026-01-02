@@ -21,6 +21,16 @@ export default async (server, opts) => {
         }
     });
 
+    server.get('/list/dpk/to/driver/bypass', async (request, reply) => {
+        try {
+            const result = await server.handover.listDPKToDriverByPass(server);
+            reply.send({ message: 'fetch successfully', data: result });
+        } catch (error) {
+            request.log.error(error);
+            reply.status(500).send({ message: `Failed: ${error.message || error}` });
+        }
+    });
+
     server.get('/list/checkin/customer', async (request, reply) => {
         try {
             const result = await server.handover.listCheckInCustomer(server);

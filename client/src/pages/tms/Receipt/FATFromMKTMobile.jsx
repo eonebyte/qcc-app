@@ -38,7 +38,7 @@ const FATFromMKTMobile = () => {
         setLoading(true);
         try {
             const res = await axios.get(`${backEndUrl}/receipt/list/fat/from/mkt`, { withCredentials: true });
-            
+
             if (res.data.data && res.data.data.success) {
                 const rawBundles = res.data.data.data || [];
 
@@ -125,9 +125,9 @@ const FATFromMKTMobile = () => {
         setDataList(prev => prev.map(bundle => {
             if (bundle.bundleNo === bundleNo) {
                 const newStatus = !bundle.bundleSelected;
-                return { 
-                    ...bundle, 
-                    bundleSelected: newStatus 
+                return {
+                    ...bundle,
+                    bundleSelected: newStatus
                 };
             }
             return bundle;
@@ -150,11 +150,13 @@ const FATFromMKTMobile = () => {
                         setDataList(prev => prev.map(bundle => ({
                             ...bundle,
                             shipments: bundle.shipments.filter(s => s.key !== shipment.key)
-                        })).filter(b => b.shipments.length > 0)); 
+                        })).filter(b => b.shipments.length > 0));
                     } else {
                         Toast.show({ content: res.data.message || 'Gagal reject', icon: 'fail' });
                     }
                 } catch (error) {
+                    console.log(error);
+
                     Toast.show({ content: 'Error saat reject', icon: 'fail' });
                 }
             }
@@ -164,7 +166,7 @@ const FATFromMKTMobile = () => {
     // --- HANDLER SUBMIT (ACCEPT) ---
     const handleSubmit = () => {
         const selectedBundles = dataList.filter(b => b.bundleSelected);
-        
+
         if (selectedBundles.length === 0) return;
 
         Dialog.confirm({
@@ -178,7 +180,7 @@ const FATFromMKTMobile = () => {
                         {selectedBundles.map(b => (
                             <li key={b.key}>
                                 <strong>{b.bundleNo}</strong> ({b.shipments.length} Docs)
-                                <br/>SPP: {b.sppno || '-'}
+                                <br />SPP: {b.sppno || '-'}
                             </li>
                         ))}
                     </ul>
@@ -201,6 +203,7 @@ const FATFromMKTMobile = () => {
                         Toast.show({ content: res.data.message || 'Gagal', icon: 'fail' });
                     }
                 } catch (error) {
+                    console.log(error);
                     Toast.show({ content: 'Error saat submit', icon: 'fail' });
                 }
             }
@@ -210,14 +213,14 @@ const FATFromMKTMobile = () => {
     // --- RENDER BUNDLE ---
     const renderBundle = (bundle) => {
         const allChecked = bundle.shipments.every(s => s.checked);
-        
+
         return (
-            <Collapse.Panel 
-                key={bundle.key} 
+            <Collapse.Panel
+                key={bundle.key}
                 title={
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div onClick={e => e.stopPropagation()}>
-                            <Checkbox 
+                            <Checkbox
                                 checked={bundle.bundleSelected}
                                 disabled={!allChecked}
                                 onChange={() => toggleBundleSelection(bundle.bundleNo)}
@@ -245,9 +248,9 @@ const FATFromMKTMobile = () => {
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    <Button 
-                                        size='mini' 
-                                        color='danger' 
+                                    <Button
+                                        size='mini'
+                                        color='danger'
                                         fill='outline'
                                         onClick={() => handleRejectItem(item)}
                                     >
@@ -255,16 +258,16 @@ const FATFromMKTMobile = () => {
                                     </Button>
 
                                     {item.checked ? (
-                                        <Tag 
-                                            color='success' 
+                                        <Tag
+                                            color='success'
                                             fill='outline'
                                             onClick={() => handleShipmentResetCheck(bundle.bundleNo, item.key)}
                                         >
                                             <CheckOutline style={{ verticalAlign: 'middle' }} /> Checked
                                         </Tag>
                                     ) : (
-                                        <Button 
-                                            size='mini' 
+                                        <Button
+                                            size='mini'
                                             color='primary'
                                             onClick={() => handleShipmentCheck(bundle.bundleNo, item.key)}
                                         >
@@ -275,7 +278,7 @@ const FATFromMKTMobile = () => {
                             </div>
                         </Card>
                     ))}
-                    
+
                     {!allChecked && (
                         <div style={{ fontSize: 12, color: '#faad14', textAlign: 'center', marginTop: 8 }}>
                             *Check semua dokumen untuk memilih bundle ini.
@@ -293,17 +296,17 @@ const FATFromMKTMobile = () => {
             <PullToRefresh onRefresh={fetchData}>
                 <div style={{ padding: 12, paddingBottom: 80 }}>
                     {loading && <AutoCenter>
-                      <SpinLoading color="primary" />
+                        <SpinLoading color="primary" />
                     </AutoCenter>}
-                    
+
                     {!loading && dataList.length === 0 && (
                         <AutoCenter style={{ marginTop: 20 }}>Tidak ada data bundle.</AutoCenter>
                     )}
 
-                    <Collapse 
-                        activeKey={activeKey} 
+                    <Collapse
+                        activeKey={activeKey}
                         onChange={setActiveKey}
-                        accordion={false} 
+                        accordion={false}
                     >
                         {dataList.map(bundle => renderBundle(bundle))}
                     </Collapse>
@@ -313,10 +316,10 @@ const FATFromMKTMobile = () => {
             {/* --- FLOATING ACCEPT BUTTON --- */}
             {selectedCount > 0 && (
                 <div style={{ position: 'fixed', bottom: 70, left: 12, right: 12, zIndex: 100 }}>
-                    <Button 
-                        block 
-                        color="primary" 
-                        size="large" 
+                    <Button
+                        block
+                        color="primary"
+                        size="large"
                         onClick={handleSubmit}
                         style={{ boxShadow: '0 4px 12px rgba(22, 119, 255, 0.4)' }}
                     >

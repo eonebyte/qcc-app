@@ -66,7 +66,7 @@ export async function build(opts = {}) {
     await app.register(fastifyStatic, {
         root: join(import.meta.url, 'uploads'),
         prefix: '/files/',
-        decorateReply: false
+        // decorateReply: false
     });
 
     // await app.register(fastifyStatic, {

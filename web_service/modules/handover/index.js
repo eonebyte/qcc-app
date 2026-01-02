@@ -1,10 +1,180 @@
+import PDFDocument from "pdfkit";
 import fp from "fastify-plugin";
+import fs from "fs";
+import path from "path";
+import qr from "qrcode";
+import { v4 as uuidv4 } from "uuid";
+import dotenv from "dotenv";
+
 import autoload from "@fastify/autoload";
 import { join } from "desm";
 import oracleDB from "../../configs/dbOracle.js";
 import dayjs from "dayjs";
 
+dotenv.config();
+
+const pathUrl = process.env.PATH_URL;
+
+
 class Handover {
+  formatDate(iso) {
+    if (!iso) return "-";
+    // convert ke WIB dan format YYYY-MM-DD
+    return dayjs(iso).utc().tz("Asia/Jakarta").format("YYYY-MM-DD");
+  }
+
+  formatTime(iso) {
+    if (!iso) return "-";
+    return dayjs(iso).utc().tz("Asia/Jakarta").format("HH:mm") + " WIB";
+  }
+
+  add7Hours(iso) {
+    if (!iso) return null;
+    return dayjs(iso).add(7, "hour");
+  }
+  async generateHandoverPdf(payload, from_act, to_act) {
+    const { listShipment, dataUser, bundleNo, dateHandover } = payload;
+
+    const uploadDir = path.join(process.cwd(), "uploads/handover");
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+    const uniqueId = uuidv4();
+    const fileName = `handover_${uniqueId}.pdf`;
+    const filePath = path.join(uploadDir, fileName);
+
+    const doc = new PDFDocument({ size: "A4", margin: 30 });
+    const stream = fs.createWriteStream(filePath);
+    doc.pipe(stream);
+
+    // ================= HEADER =================
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(12)
+      .text(`LIST HANDOVER (${from_act} to ${to_act})`, { align: "center" });
+    doc.moveDown(0.2);
+    doc
+      .font("Helvetica")
+      .fontSize(10)
+      .text(`No: ${bundleNo}`, { align: "center" });
+    doc.moveDown(1.5);
+
+    // ================= TABLE SETUP =================
+    const startX = 30;
+    const colNo = 30;
+    const colCust = 70;
+    const colShip = 250;
+    const colMove = 400;
+    const rowHeight = 12; // compact
+    const pageHeight = doc.page.height - doc.page.margins.bottom;
+
+    function drawTableHeader() {
+      const headerY = doc.y;
+      doc.font("Helvetica-Bold").fontSize(9);
+      doc.text("No", colNo, headerY);
+      doc.text("Customer", colCust, headerY);
+      doc.text("Shipment No", colShip, headerY);
+      doc.text("Movement Date", colMove, headerY);
+      doc
+        .moveTo(startX, headerY + 12)
+        .lineTo(565, headerY + 12)
+        .lineWidth(0.5)
+        .stroke();
+      doc.y = headerY + 15;
+    }
+
+    drawTableHeader();
+
+    doc.font("Helvetica").fontSize(8);
+
+    for (let idx = 0; idx < listShipment.length; idx++) {
+      const ship = listShipment[idx];
+      const moveDate = dayjs(ship.movementdate)
+        .tz("Asia/Jakarta")
+        .format("YYYY-MM-DD");
+
+      // ====== PAGE BREAK ======
+      if (doc.y + rowHeight * 2 > pageHeight) {
+        doc.addPage();
+        drawTableHeader();
+      }
+
+      const rowY = doc.y;
+      doc.text(idx + 1, colNo, rowY);
+      doc.text(ship.customer, colCust, rowY);
+      doc.text(ship.documentno, colShip, rowY);
+      doc.text(moveDate, colMove, rowY);
+
+      doc
+        .moveTo(startX, rowY + rowHeight)
+        .lineTo(565, rowY + rowHeight)
+        .lineWidth(0.25)
+        .stroke();
+      doc.y = rowY + rowHeight + 3; // spacing compact
+    }
+
+    doc.moveDown(1.5);
+
+    // ================= SIGNATURE =================
+    const sigStartY = doc.y;
+    const centerX = 297.5;
+    const leftX = 80;
+    const rightX = 380;
+    const boxWidth = 160;
+
+    const createdHour = this.formatTime(
+      this.add7Hours(dateHandover.createdBundle),
+    );
+    const receivedHour = this.formatTime(
+      this.add7Hours(dateHandover.receivedBundle),
+    );
+
+    doc.font("Helvetica-Bold").fontSize(10);
+    doc.text(from_act, leftX, sigStartY, { align: "center", width: boxWidth });
+    doc.text(to_act, rightX, sigStartY, { align: "center", width: boxWidth });
+
+    // QR Code
+    const qrUrl = `${pathUrl}/files/handover/${fileName}`;
+    const qrData = await qr.toDataURL(qrUrl);
+    doc.image(qrData, centerX - 30, sigStartY - 5, { width: 60 });
+
+    const lineY = sigStartY + 40;
+    doc
+      .moveTo(leftX, lineY)
+      .lineTo(leftX + boxWidth, lineY)
+      .lineWidth(1)
+      .stroke();
+    doc
+      .moveTo(rightX, lineY)
+      .lineTo(rightX + boxWidth, lineY)
+      .lineWidth(1)
+      .stroke();
+
+    doc.font("Helvetica").fontSize(8);
+    doc.text(dataUser.createdby_name, leftX, lineY + 3, {
+      width: boxWidth,
+      align: "center",
+    });
+    doc.text(dataUser.receivedby_name, rightX, lineY + 3, {
+      width: boxWidth,
+      align: "center",
+    });
+
+    doc.text(createdHour, leftX, lineY + 16, {
+      width: boxWidth,
+      align: "center",
+    });
+    doc.text(receivedHour, rightX, lineY + 16, {
+      width: boxWidth,
+      align: "center",
+    });
+
+    doc.end();
+    await new Promise((resolve) => stream.on("finish", resolve));
+
+    return { fileName, filePath };
+  }
+
+
   async listDeliveryToDPK(server, startDate, endDate) {
     let connection;
     let dbClient;
@@ -253,6 +423,138 @@ class Handover {
                 SELECT adw_trackingsj_id, m_inout_id, checkpoin_id, cancelrequest
                 FROM adw_trackingsj
                 WHERE checkpoin_id = '3' AND cancelrequest = 'N'
+            `;
+
+      const resultPg = await dbClient.query(queryPostgres);
+
+      const existingTrackingData = new Map(
+        resultPg.rows.map((row) => [
+          String(row.m_inout_id),
+          {
+            checkpoint: row.checkpoin_id,
+            cancelrequest: row.cancelrequest,
+            adw_trackingsj_id: row.adw_trackingsj_id,
+          },
+        ]),
+      );
+
+      const filteredData = oracleRows.filter((oracleRow) => {
+        const data = existingTrackingData.get(String(oracleRow.M_INOUT_ID));
+        return data !== undefined;
+      });
+
+      const mappingData = filteredData.map((row) => {
+        const track = existingTrackingData.get(String(row.M_INOUT_ID));
+
+        return {
+          m_inout_id: row.M_INOUT_ID,
+          documentno: row.DOCUMENTNO,
+          customer: row.CUSTOMER,
+          plantime: row.PLANTIME,
+          checkpoin_id: track.checkpoint,
+          cancelrequest: track.cancelrequest,
+          adw_trackingsj_id: track.adw_trackingsj_id,
+        };
+      });
+
+      return {
+        success: true,
+        count: mappingData.length,
+        data: mappingData,
+      };
+    } catch (error) {
+      console.log(error);
+      return { success: false, message: "Server error" };
+    } finally {
+      if (connection) {
+        try {
+          await connection.close();
+        } catch (closeErr) {
+          console.log("Error closing Oracle connection:", closeErr);
+        }
+      }
+      if (dbClient) {
+        try {
+          dbClient.release();
+        } catch (closeErr) {
+          console.log("Error releasing pg connection:", closeErr);
+        }
+      }
+    }
+  }
+
+  async listDPKToDriverByPass(server) {
+    let connection;
+    let dbClient;
+
+    if (!server) {
+      // Ini menggantikan blok 'default' pada switch
+      return { success: false, message: "Unable connection db" };
+    }
+
+    try {
+      connection = await oracleDB.openConnection();
+      dbClient = await server.pg.connect();
+
+      // Konfig Date
+      const configQuery = `
+            SELECT start_date
+            FROM adw_trackingsj_config
+            WHERE adw_trackingsj_config_id = 1
+            LIMIT 1;
+        `;
+
+      const configRes = await dbClient.query(configQuery);
+      const startDate =
+        configRes.rows.length > 0 ? configRes.rows[0].start_date : null;
+
+      if (!startDate) {
+        return { success: false, message: "Config start_date not found" };
+      }
+
+      // Convert ke format YYYY-MM-DD untuk Oracle
+      const oracleStartDate = dayjs(startDate).format("YYYY-MM-DD");
+
+      const queryOracle = `
+                SELECT
+                    mi.M_INOUT_ID,
+                    mi.DOCUMENTNO,
+                    cb.NAME AS CUSTOMER,
+                    TO_DATE(
+					    TO_CHAR(mi.MOVEMENTDATE, 'YYYY-MM-DD') || ' ' ||
+					    TO_CHAR(mi.PLANTIME, 'HH24:MI:SS'),
+					    'YYYY-MM-DD HH24:MI:SS'
+					) AS PLANTIME
+                FROM
+                    M_INOUT mi
+                    INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
+                    INNER JOIN C_ORDER co ON co.C_ORDER_ID = mi.C_ORDER_ID
+                WHERE
+                    mi.MOVEMENTDATE >= TO_DATE(:startDate, 'YYYY-MM-DD')
+                    AND mi.DOCSTATUS IN ('CO', 'DR', 'IN', 'IP') AND ISSOTRX = 'Y'
+                    AND cb.ISSUBCONTRACT = 'N'
+                    AND co.ISMILKRUN = 'N'
+                    ORDER BY mi.DOCUMENTNO DESC
+                `;
+
+      // Eksekusi query tanpa parameter
+      const resultOracle = await connection.execute(
+        queryOracle,
+        { startDate: oracleStartDate },
+        {
+          outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT,
+        },
+      );
+      const oracleRows = resultOracle.rows || [];
+
+      if (oracleRows.length === 0) {
+        return { success: true, count: 0, data: [] };
+      }
+
+      const queryPostgres = `
+                SELECT adw_trackingsj_id, m_inout_id, checkpoin_id, cancelrequest
+                FROM adw_trackingsj
+                WHERE checkpoin_id = '2' AND cancelrequest = 'N'
             `;
 
       const resultPg = await dbClient.query(queryPostgres);
@@ -655,6 +957,187 @@ class Handover {
     } catch (error) {
       if (dbClient) await dbClient.query("ROLLBACK");
       console.error("Transaction Error in processDPKToDriver:", error.message);
+      throw error;
+    } finally {
+      if (dbClient) await dbClient.release();
+    }
+  }
+
+  async processDPKToDriverByPass(server, payloads) {
+    const dbClient = await server.pg.connect();
+
+    try {
+      await dbClient.query("BEGIN");
+
+      const { data, driverId, driverName, tnkbId, tnkbName } = payloads;
+
+      // 1. Validasi Input
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        throw { statusCode: 400, message: "Data is required for handover." };
+      }
+
+      // Ambil semua m_inout_id dari data payload
+      const inoutIds = data.map(item => item.m_inout_id);
+
+      // ============================================================
+      // 2️⃣ UPDATE adw_trackingsj (checkpoint 2 → 5)
+      // ============================================================
+
+      const updateQuery = `
+          UPDATE adw_trackingsj
+          SET
+              checkpoin_id = $1,
+              updated = NOW(),
+              updatedby = $2,
+              drivername = $4,
+              tnkb_id = $5,
+              driver_id = $7,
+              tnkb = $8
+          WHERE
+              m_inout_id = ANY($3::integer[])
+              AND checkpoin_id = $6
+          RETURNING adw_trackingsj_id, m_inout_id;
+      `;
+
+      const updateValues = [
+        "5",        // $1: pindah checkpoint ke 5
+        0,     // $2
+        inoutIds,   // $3
+        driverName, // $4
+        tnkbId,     // $5
+        "2",        // $6: filter hanya yang dari checkpoint 2
+        driverId,   // $7
+        tnkbName    // $8
+      ];
+
+      const updateResult = await dbClient.query(updateQuery, updateValues);
+
+      if (updateResult.rows.length === 0) {
+        throw new Error(
+          "No items updated — wrong checkpoint or already processed.",
+        );
+      }
+
+      const updatedTracking = updateResult.rows;
+      let lastGroupId = null; // Untuk keperluan response jika diperlukan
+
+      // ============================================================
+      // 3️⃣ LOOP PER SJ UNTUK UPDATE GROUP & INSERT EVENT
+      // ============================================================
+
+      let DocRef;
+
+      for (const row of updatedTracking) {
+        const trackingId = row.adw_trackingsj_id;
+
+        // Ambil Group ID dan Document No yang sudah ada sebelumnya (dari DPK)
+        const getGroupDocNo = `
+        SELECT ahg.adw_handover_group_id, ahg.documentno 
+        FROM adw_handover_group ahg 
+        JOIN adw_group_sj ags ON ahg.adw_handover_group_id = ags.adw_handover_group_id
+        WHERE ahg.notes = 'ho delivery to dpk'
+        AND ags.adw_trackingsj_id = $1
+        LIMIT 1`;
+
+        const groupRes = await dbClient.query(getGroupDocNo, [trackingId]);
+
+        if (groupRes.rows.length === 0) {
+          throw new Error(`Data group handover untuk SJ ID ${trackingId} tidak ditemukan.`);
+        }
+
+        const { adw_handover_group_id: groupId, documentno } = groupRes.rows[0];
+        lastGroupId = groupId;
+
+        DocRef = documentno
+        // 3.1 Update Handover Group (Tanda terima oleh Driver)
+        const updateHandoverGroupQuery = `
+          UPDATE adw_handover_group
+          SET
+              received = NOW(),
+              receivedby = $1,
+              receivedbyname = $2,
+              updated = NOW(),
+              updatedby = $1
+          WHERE documentno = $3
+      `;
+        // Menggunakan userId pengirim atau 0 jika sistem otomatis, di sini saya gunakan userId
+        await dbClient.query(updateHandoverGroupQuery, [0, driverName, documentno]);
+
+        // 3.3 Insert Event Tracking
+        const insertEventQuery = `
+          INSERT INTO adw_trackingsj_events(
+              ad_client_id, ad_org_id, ad_user_id,
+              adw_event_type, adw_from_actor, adw_to_actor,
+              adw_trackingsj_id, created, createdby, isactive,
+              updated, updatedby, checkpoin_id, username
+          ) VALUES(
+              1000003, 1000003, $1,
+              'ACCEPTANCE', $2, $3,
+              $4, NOW(), $1, 'Y',
+              NOW(), $1, $5, $6
+          );
+      `;
+
+        await dbClient.query(insertEventQuery, [
+          0,       // $1: User yang melakukan aksi
+          "Delivery",   // $2
+          "Driver",     // $3
+          trackingId,   // $4
+          "5",           // $5
+          driverName
+        ]);
+      }
+
+      // Generate PDF
+      const {
+        listShipment,
+        dataUser,
+        bundleNo,
+        bundleCheckpoint,
+        dateHandover,
+      } = await server.tms.listBundleDetailPDF(dbClient, DocRef);
+      const payload = {
+        listShipment,
+        dataUser,
+        bundleNo,
+        bundleCheckpoint,
+        dateHandover,
+      };
+
+      const { fileName, filePath } = await this.generateHandoverPdf(
+        payload,
+        "Delivery",
+        "Driver",
+      );
+
+      if (fileName) {
+        const updateHandoverGroupAttachment = `
+                    UPDATE adw_handover_group
+                    SET
+                        updated = NOW(),
+                        updatedby = $1,
+                        attachment = $2
+                    WHERE documentno = $3
+                `;
+        await dbClient.query(updateHandoverGroupAttachment, [
+          0,
+          fileName,
+          DocRef,
+        ]);
+      }
+
+      // 4️⃣ Response
+      await dbClient.query("COMMIT");
+
+      return {
+        handover_group_id: lastGroupId,
+        updatedCount: updatedTracking.length,
+        message: `Successfully handed over ${updatedTracking.length} SJ to Driver (ByPass DPK)`,
+      };
+
+    } catch (error) {
+      if (dbClient) await dbClient.query("ROLLBACK");
+      console.error("Transaction Error in processDPKToDriverByPass:", error.message);
       throw error;
     } finally {
       if (dbClient) await dbClient.release();

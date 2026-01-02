@@ -84,10 +84,12 @@ const stepDefinitions = [
   {
     title: "Driver",
     icon: <CarOutlined />,
-    handoverKey: "ho_driver_to_customer",
-    handoverByKey: "ho_driver_to_customerby_name",
-    acceptKey: "accept_customer_from_driver",
-    acceptByKey: "accept_customer_from_driverby_name",
+    handoverKey: "ho_dpk_to_driver",
+    handoverByKey: "ho_dpk_to_driverby_name",
+    acceptKey: "accept_driver_from_dpk",
+    acceptKeyByPass: "accept_driver_from_delivery", // SESUAI JSON
+    acceptByKey: "accept_driver_from_dpkby_name",
+    acceptByByPassKey: "accept_driver_from_deliveryby", // SESUAI JSON
     preHandoverText: "Check Out (Customer)",
     postHandoverText: "Wait Diambil",
   },
@@ -184,34 +186,34 @@ const ProgressShipment = () => {
 
     const startIndex = (page - 1) * pageSize;
     return apiData.map((item, dataIndex) => {
-      // aman-in property names: terima berbagai variasi huruf besar/kecil
-      const id =
-        item.m_inout_id ||
-        item.M_INOUT_ID ||
-        item.adw_trackingsj_id ||
-        item.id ||
-        dataIndex + startIndex + 1;
-      const documentno =
-        item.documentno ||
-        item.documentno ||
-        item.documentno ||
-        item.docNo ||
-        "";
-      const customer = item.customer;
-      const planTime = item.plantime;
+      const id = item.m_inout_id || item.adw_trackingsj_id || dataIndex + startIndex + 1;
+      const documentno = item.documentno || "";
 
-      const has_cancel_log = item.has_cancel_log;
+      // DETEKSI BYPASS: Jika ada waktu penerimaan driver langsung dari delivery
+      const isBypass = !!item.accept_driver_from_delivery;
 
-      const adw_trackingsj_id = item.adw_trackingsj_id;
+      // Filter stepDefinitions: Jika bypass, hapus step DPK pertama (index 1)
+      const effectiveSteps = stepDefinitions.filter((step, idx) => {
+        if (isBypass && idx === 1) return false; // Melewati step DPK
+        return true;
+      });
 
-      // const notes = item.notes;
-      const iscancel = item.iscancel;
+      const flow = effectiveSteps.map((step, stepIndex) => {
+        // Gunakan key bypass jika tersedia dan data memang bypass
+        const acceptKey = (isBypass && step.acceptKeyByPass) ? step.acceptKeyByPass : step.acceptKey;
+        const acceptByKey = (isBypass && step.acceptByByPassKey) ? step.acceptByByPassKey : step.acceptByKey;
 
-      const flow = stepDefinitions.map((step, stepIndex) => {
         const handoverTimestamp = item[step.handoverKey];
-        const acceptTimestamp = item[step.acceptKey];
-        const prevStep = stepIndex > 0 ? stepDefinitions[stepIndex - 1] : null;
-        const isPrevStepAccepted = prevStep ? !!item[prevStep.acceptKey] : true;
+        const acceptTimestamp = item[acceptKey];
+
+        const prevStep = stepIndex > 0 ? effectiveSteps[stepIndex - 1] : null;
+
+        // Logika check acceptance sebelumnya
+        let isPrevStepAccepted = true;
+        if (prevStep) {
+          const prevAcceptKey = (isBypass && prevStep.acceptKeyByPass) ? prevStep.acceptKeyByPass : prevStep.acceptKey;
+          isPrevStepAccepted = !!item[prevAcceptKey];
+        }
 
         let status = "pending",
           displayValue = "Wait",
@@ -220,8 +222,7 @@ const ProgressShipment = () => {
         if (acceptTimestamp) {
           status = "completed";
           displayValue = "Selesai";
-          displayTime =
-            formatTime(handoverTimestamp) + " / " + formatTime(acceptTimestamp);
+          displayTime = formatTime(handoverTimestamp || item.ho_delivery_to_dpk) + " / " + formatTime(acceptTimestamp);
         } else if (isPrevStepAccepted) {
           status = "in_progress";
           if (handoverTimestamp) {
@@ -229,7 +230,9 @@ const ProgressShipment = () => {
             displayTime = formatTime(handoverTimestamp);
           } else {
             displayValue = step.preHandoverText;
-            displayTime = prevStep ? formatTime(item[prevStep.acceptKey]) : "-";
+            // Jika bypass dan ini step Driver, handover time-nya diambil dari ho_delivery_to_dpk
+            const prevTime = prevStep ? item[(isBypass && prevStep.acceptKeyByPass) ? prevStep.acceptKeyByPass : prevStep.acceptKey] : "-";
+            displayTime = formatTime(prevTime);
           }
         }
 
@@ -240,20 +243,18 @@ const ProgressShipment = () => {
         }
 
         const rawData = {
-          handoverTime: item[step.handoverKey],
-          handoverBy: item[step.handoverByKey],
-          acceptTime: item[step.acceptKey],
-          acceptBy: item[step.acceptByKey],
+          handoverTime: handoverTimestamp || (isBypass && step.title === 'Driver' ? item.ho_delivery_to_dpk : null),
+          handoverBy: item[step.handoverByKey] || (isBypass && step.title === 'Driver' ? item.ho_delivery_to_dpkby_name : null),
+          acceptTime: acceptTimestamp,
+          acceptBy: item[acceptByKey],
         };
 
-        // =========================================
-        // Custom text untuk Check In ke Customer
-        // =========================================
+        // Custom text untuk Driver
         if (step.title === "Driver" && status === "in_progress") {
           if (!item.adw_tms_id) {
             displayValue = "Process Cek Security";
           } else {
-            displayValue = "Check Out (Customer)";
+            displayValue = isBypass ? "Handover Driver (Bypass)" : "Check Out (Customer)";
           }
         }
 
@@ -272,12 +273,12 @@ const ProgressShipment = () => {
         m_inout_id: id,
         no: startIndex + dataIndex + 1,
         docNo: documentno,
-        customer: customer,
-        planTime: planTime,
-        has_cancel_log: has_cancel_log,
-        adw_trackingsj_id: parseInt(adw_trackingsj_id),
-        // notes: notes,
-        iscancel: iscancel,
+        customer: item.customer,
+        planTime: item.plantime,
+        has_cancel_log: item.has_cancel_log,
+        adw_trackingsj_id: parseInt(item.adw_trackingsj_id),
+        iscancel: item.iscancel,
+        isBypass, // Tandai record sebagai bypass
         flow,
       };
     });
@@ -847,45 +848,23 @@ const ProgressShipment = () => {
                 return (
                   <Timeline.Item key={index} dot={<ClockCircleOutlined />}>
                     <div style={{ fontWeight: "bold", marginBottom: 4 }}>
-                      {step.title === "Customer"
-                        ? "Customer (Driver Auto to DPK)"
-                        : step.title}
+                      {step.title} {timelineData.isBypass && step.title === "Driver" ? "(Direct from Delivery)" : ""}
                     </div>
 
-                    {(handoverTime || acceptTime) && (
-                      <div style={{ display: "flex", gap: "16px" }}>
-                        {handoverTime && (
-                          <span>
-                            <strong>
-                              {step.title === "Driver" ||
-                              step.title === "Customer"
-                                ? "CO: "
-                                : "HO: "}
-                            </strong>
-                            {handoverTime}
-                            {step.rawData.handoverBy &&
-                              ` by ${step.rawData.handoverBy}`}
-                          </span>
-                        )}
-                        {handoverTime &&
-                          acceptTime &&
-                          step.title !== "Driver" &&
-                          step.title !== "Customer" && <span> {`->`} </span>}
-                        {acceptTime &&
-                          step.title !== "Driver" &&
-                          step.title !== "Customer" && (
-                            <span>
-                              <strong>Receipt:</strong> {acceptTime}
-                              {step.rawData.acceptBy &&
-                                ` by ${step.rawData.acceptBy}`}
-                            </span>
-                          )}
-                        {/* <span>
-                                                    <strong>Receipt:</strong> {acceptTime}
-                                                    {step.rawData.acceptBy && ` by ${step.rawData.acceptBy}`}
-                                                </span> */}
-                      </div>
-                    )}
+                    <div style={{ display: "flex", gap: "16px" }}>
+                      {handoverTime && (
+                        <span>
+                          <strong>HO:</strong> {handoverTime}
+                          {step.rawData.handoverBy && ` by ${step.rawData.handoverBy}`}
+                        </span>
+                      )}
+                      {acceptTime && (
+                        <span>
+                          <strong>Receipt:</strong> {acceptTime}
+                          {step.rawData.acceptBy && ` by ${step.rawData.acceptBy}`}
+                        </span>
+                      )}
+                    </div>
                   </Timeline.Item>
                 );
               })}

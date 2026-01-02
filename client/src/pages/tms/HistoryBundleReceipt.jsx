@@ -67,7 +67,7 @@ const HistoryBundleReceipt = () => {
   switch (role) {
     case "delivery": cPoint = 8; break;
     case "dpk": cPoint = 2; cPointSecond = 6; break;
-    case "driver": cPoint = 4; break;
+    case "driver": cPoint = 4; cPointSecond = 2; break;
     case "marketing": cPoint = 10; cPointSecond = 11; break;
     case "fat": cPoint = 12; cPointSecond = 13; break;
     default: break;

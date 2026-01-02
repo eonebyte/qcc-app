@@ -306,7 +306,9 @@ const DriverFromDPKMobile = () => {
                     {item.documentno}
                   </div>
 
-                  <div style={{ fontSize: 14, fontWeight: "700", color: "#333", marginBottom: 6 }}>
+                  <div 
+                  style={{ fontSize: 14, fontWeight: "700", color: "#333", marginBottom: 6 }}
+                  >
                     <Tag color='primary' fill='outline' style={{ marginRight: 6 }}>{item.customerkey}</Tag>
                     {item.customer}
                   </div>

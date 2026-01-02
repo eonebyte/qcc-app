@@ -44,6 +44,7 @@ import { useState } from "react";
 import PinSetupPopup from "./components/popups/PinSetupPopUp";
 import useIsMobile from "./hooks/useIsMobile";
 import ReloadPrompt from "./components/ReloadPromp";
+import DriverReceiptSJOut from "./pages/tms/Receipt/DriverReceiptSJOut";
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 function App() {
@@ -154,7 +155,9 @@ function App() {
         />
 
         <Route path="/handover/dpk/to/driver" element={<DPKToDriver />} />
-        <Route path="/receipt/driver/from/dpk" element={<DriverFromDPK />} />
+        {/* <Route path="/receipt/driver/from/dpk" element={<DriverFromDPK />} /> */}
+        <Route path="/receipt/driver/from/dpk" element={<DriverReceiptSJOut />} />
+        DriverReceiptSJOut
 
         <Route path="/handover/checkin/customer" element={<CheckOut />} />
         <Route path="/handover/checkout/droponly" element={<DropOnly />} />
