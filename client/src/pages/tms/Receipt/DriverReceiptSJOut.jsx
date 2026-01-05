@@ -358,6 +358,8 @@ const DPKTab = ({ userName }) => {
         Dialog.confirm({
             title: 'Konfirmasi DPK',
             content: `Terima ${selected.length} Bundle?`,
+            confirmText: 'Ok',
+            cancelText: 'Batal',
             onConfirm: async () => {
                 const payload = { data: selected.map(b => ({ ...b, shipments: b.shipments.filter(s => s.checked) })) };
                 await axios.post(`${backEndUrl}/receipt/process/driver/from/dpk`, payload, { withCredentials: true });

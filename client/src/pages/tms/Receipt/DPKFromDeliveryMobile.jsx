@@ -209,6 +209,8 @@ const DPKFromDeliveryMobile = () => {
     Dialog.confirm({
       title: "Konfirmasi",
       content: `Terima ${selectedBundles.length} Bundle?`,
+      confirmText: 'Ok',
+      cancelText: 'Batal',
       onConfirm: async () => {
         try {
           const payloadData = selectedBundles.map((b) => ({
