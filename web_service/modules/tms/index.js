@@ -5412,10 +5412,9 @@ class TMS {
 
         const usernameQuery = `
             SELECT name FROM ad_user WHERE ad_user_id = $1
-            RETURNING name;
         `;
         const userRes = await dbClient.query(usernameQuery, [userId]);
-        const usernameData = userRes.rows[0];
+        const usernameData = userRes.rows[0]?.name || 'System';
 
 
         const insertEventQuery = `
@@ -5434,7 +5433,7 @@ class TMS {
             `;
 
         await dbClient.query(insertEventQuery, [
-          usernameData.name,
+          usernameData,
           "Delivery",
           "MKT",
           updatedData.adw_trackingsj_id,
@@ -5449,11 +5448,12 @@ class TMS {
       return {
         success: true,
         message: "Data berhasil di-reject",
-        data: updated.rows[0],
+        data: updatedRes.rows[0],
       };
     } catch (error) {
+      if (dbClient) await dbClient.query("ROLLBACK");
       console.error("Error reject:", error);
-      return [];
+      throw error;
     } finally {
       if (dbClient) await dbClient.release();
       if (oracleConnection) await oracleConnection.close();

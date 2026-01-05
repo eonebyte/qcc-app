@@ -135,6 +135,8 @@ export default function CheckOutDropOnlyMobile() {
         Toast.show({ content: "Submit gagal.", icon: "fail" });
       }
     } catch (err) {
+      console.log(err);
+      
       Toast.clear();
       Toast.show({ content: "Terjadi error.", icon: "fail" });
     }

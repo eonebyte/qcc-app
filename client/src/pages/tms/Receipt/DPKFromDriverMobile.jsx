@@ -182,6 +182,8 @@ const DPKFromDriverMobile = () => {
     Dialog.confirm({
       title: "Konfirmasi Penerimaan",
       content: `Terima ${selectedBundles.length} Bundle terpilih?`,
+      confirmText: 'Ok',
+      cancelText: 'Batal',
       onConfirm: async () => {
         try {
           const payload = { data: selectedBundles };

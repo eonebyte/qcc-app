@@ -185,6 +185,8 @@ const DPKFromDeliveryMobile = () => {
     Dialog.confirm({
       title: "Konfirmasi Reject",
       content: `Reject dokumen ${shipment.documentno}?`,
+      confirmText: 'Ok',
+      cancelText: 'Batal',
       onConfirm: async () => {
         try {
           const res = await axios.post(`${backEndUrl}/tms/reject`, shipment, { withCredentials: true });
