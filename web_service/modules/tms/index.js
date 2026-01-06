@@ -4539,6 +4539,17 @@ class TMS {
       connection = await oracleDB.openConnection();
       dbClient = await server.pg.connect();
 
+      const driverName = `
+                SELECT NAME FROM AD_USER 
+                    	WHERE AD_USER_ID = :driver_id AND TITLE = 'driver'
+            `;
+
+      const driverRow = await connection.execute(
+        driverName,
+        { driver_id: driver_id },
+        { outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT },
+      );
+
       // ---------------------------------------------------------
       // 1️⃣   Ambil data postage yg sedang ada di checkpoint tertentu
       //      Tapi JOIN pivot agar dapat group ID
@@ -4548,14 +4559,14 @@ class TMS {
                     t.m_inout_id,
                     t.tnkb_id
                 FROM adw_trackingsj t
-                WHERE t.driver_id = $1
+                WHERE UPPER(TRIM(t.drivername)) = UPPER(TRIM($1))
                 AND t.checkpoin_id = '5'
                 AND t.trip_mode IS NULL
                 AND arrivedat_customer = 'N'
                 ORDER BY created ASC
                 `;
 
-      const resultPg = await dbClient.query(queryPostgres, [driver_id]);
+      const resultPg = await dbClient.query(queryPostgres, [driverRow.rows[0].NAME]);
 
       const postgresRows = resultPg.rows || [];
 
