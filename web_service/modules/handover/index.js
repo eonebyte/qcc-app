@@ -1703,6 +1703,9 @@ class Handover {
     let connection;
     let dbClient;
 
+    let finalStartDate;
+    let finalEndDate;
+
     if (!server) {
       return { success: false, message: "Unable connection db" };
     }
@@ -1710,6 +1713,25 @@ class Handover {
     try {
       dbClient = await server.pg.connect();
       connection = await oracleDB.openConnection();
+
+      const configQuery = `
+                                SELECT start_date
+                                FROM adw_trackingsj_config
+                                WHERE adw_trackingsj_config_id = 1
+                                LIMIT 1;
+                            `;
+
+      const configRes = await dbClient.query(configQuery);
+      const configDate =
+        configRes.rows.length > 0 ? configRes.rows[0].start_date : null;
+
+      if (!configDate) {
+        return { success: false, message: "Config start_date not found" };
+      }
+
+      // Default: Dari config sampai Hari Ini (Current Date)
+      finalStartDate = dayjs(configDate).format("YYYY-MM-DD");
+      finalEndDate = dayjs().format("YYYY-MM-DD");
 
       // -----------------------------------------------------------
       // 1. AMBIL DATA DARI POSTGRES DULU (Source of Truth Status)
@@ -1742,6 +1764,10 @@ class Handover {
       // Kita buat parameter bind (:1, :2, dst)
       const bindVars = mInoutIds.map((_, i) => `:${i + 1}`).join(",");
 
+      // Convert ke format YYYY-MM-DD untuk Oracle
+      const oracleStartDate = dayjs(finalStartDate).format("YYYY-MM-DD");
+      const oracleEndDate = dayjs(finalEndDate).format("YYYY-MM-DD");
+
       const queryOracle = `
             SELECT
                 mi.M_INOUT_ID,
@@ -1757,11 +1783,20 @@ class Handover {
                 INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
             WHERE
                 mi.M_INOUT_ID IN (${bindVars})
+                AND mi.MOVEMENTDATE BETWEEN
+                TO_DATE(:startDate, 'YYYY-MM-DD')
+                AND TO_DATE(:endDate, 'YYYY-MM-DD')
             ORDER BY mi.DOCUMENTNO DESC
         `;
 
+      const oracleBinds = {
+        ...Object.fromEntries(mInoutIds.map((id, i) => [i + 1, id])),
+        startDate: finalStartDate,
+        endDate: finalEndDate,
+      };
+
       // Eksekusi query dengan ID dari Postgres
-      const resultOracle = await connection.execute(queryOracle, mInoutIds, {
+      const resultOracle = await connection.execute(queryOracle, oracleBinds, {
         outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT,
       });
 
