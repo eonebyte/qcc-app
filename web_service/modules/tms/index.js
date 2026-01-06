@@ -493,7 +493,7 @@ class TMS {
                 SELECT AD_USER_ID, NAME
                     FROM AD_USER au
                 WHERE au.TITLE = 'driver'
-                    AND LOWER(au.NAME) LIKE '%' || LOWER(:username) || '%'
+                    AND UPPER(au.NAME) LIKE '%' || UPPER(REPLACE(:username, '%20', ' ')) || '%'
                 `;
 
       const resultGetDrivers = await connection.execute(
