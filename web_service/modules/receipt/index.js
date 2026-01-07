@@ -14,6 +14,17 @@ dotenv.config();
 
 const pathUrl = process.env.PATH_URL;
 
+function chunkArray(arr, size = 1000) {
+  if (!Array.isArray(arr)) return [];
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+
+
 class Receipt {
   formatDate(iso) {
     if (!iso) return "-";
@@ -307,6 +318,8 @@ class Receipt {
     return { fileName, filePath };
   }
 
+
+
   async listDPKFromDelivery(server) {
     let connection;
     let dbClient;
@@ -341,6 +354,9 @@ class Receipt {
                   LEFT JOIN adw_group_sj gs
                       ON gs.adw_trackingsj_id = t.adw_trackingsj_id
                   WHERE t.checkpoin_id = $1
+                  AND t.created BETWEEN
+                    CURRENT_DATE - INTERVAL '7 days'
+                    AND CURRENT_DATE + INTERVAL '7 days'
               ) x
               WHERE rn = 1
               ORDER BY m_inout_id DESC;
@@ -355,32 +371,49 @@ class Receipt {
       }
 
       // ---------------------------------------------------------
-      // 2️⃣ Ambil detail SJ dari Oracle berdasarkan m_inout_id
+      // 2️⃣ Ambil detail SJ dari Oracle berdasarkan m_inout_id (DIPERBAIKI)
       // ---------------------------------------------------------
       const inoutIds = postgresRows.map((r) => r.m_inout_id);
 
-      const oracleQuery = `
-            SELECT
-                mi.M_INOUT_ID,
-                mi.DOCUMENTNO,
-                cb.NAME AS CUSTOMER,
-                TO_DATE(
-                    TO_CHAR(MOVEMENTDATE, 'YYYY-MM-DD') || ' ' || TO_CHAR(PLANTIME, 'HH24:MI:SS'),
-                    'YYYY-MM-DD HH24:MI:SS'
-                ) AS PLANTIME,
-                SPPNO
-            FROM M_INOUT mi
-            INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
-            WHERE mi.M_INOUT_ID IN (${inoutIds.map((_, i) => `:${i + 1}`).join(",")})
-            ORDER BY mi.DOCUMENTNO DESC
-            `;
+      // Inisialisasi untuk menampung semua hasil dari Oracle
+      let allOracleRows = [];
+      const CHUNK_SIZE = 999; // Oracle limit is 1000
 
-      const oracleRows = await connection.execute(oracleQuery, inoutIds, {
-        outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT,
-      });
+      // Melakukan chunking (membagi array menjadi potongan kecil)
+      for (let i = 0; i < inoutIds.length; i += CHUNK_SIZE) {
+        const chunk = inoutIds.slice(i, i + CHUNK_SIZE);
+        const bindVars = chunk.map((_, idx) => `:${idx + 1}`).join(",");
+
+        const oracleQuery = `
+              SELECT
+                  mi.M_INOUT_ID,
+                  mi.DOCUMENTNO,
+                  cb.NAME AS CUSTOMER,
+                  TO_DATE(
+                      TO_CHAR(MOVEMENTDATE, 'YYYY-MM-DD') || ' ' || TO_CHAR(PLANTIME, 'HH24:MI:SS'),
+                      'YYYY-MM-DD HH24:MI:SS'
+                  ) AS PLANTIME,
+                  SPPNO
+              FROM M_INOUT mi
+              INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
+              WHERE mi.M_INOUT_ID IN (${bindVars})
+              ORDER BY mi.DOCUMENTNO DESC
+        `;
+
+        const oracleBinds = {
+          ...Object.fromEntries(chunk.map((id, idx) => [idx + 1, id])),
+        };
+
+        const result = await connection.execute(oracleQuery, oracleBinds, {
+          outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT,
+        });
+
+        // Masukkan hasil ke array penampung
+        allOracleRows.push(...result.rows);
+      }
 
       const oracleMap = new Map(
-        oracleRows.rows.map((row) => [String(row.M_INOUT_ID), row]),
+        allOracleRows.map((row) => [String(row.M_INOUT_ID), row]),
       );
 
       // ---------------------------------------------------------
