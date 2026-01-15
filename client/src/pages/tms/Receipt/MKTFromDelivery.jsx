@@ -8,6 +8,8 @@ import LayoutGlobal from '../../../components/layouts/LayoutGlobal';
 import { useSelector } from 'react-redux';
 import useIsMobile from '../../../hooks/useIsMobile';
 import MKTFromDeliveryMobile from './MKTFromDeliveryMobile';
+import { useRef } from 'react';
+import Highlighter from 'react-highlight-words';
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3200';
 
@@ -30,6 +32,10 @@ const MKTFromDelivery = () => {
     const [isModalRejectOpen, setIsModalRejectOpen] = useState(false);
     const [itemToReject, setItemToReject] = useState(null);
     const [rejectNote, setRejectNote] = useState('');
+
+    // SEARCH
+    const [searchedColumn, setSearchedColumn] = useState("");
+    const searchInput = useRef(null);
 
     useEffect(() => {
         fetchData();
@@ -79,7 +85,7 @@ const MKTFromDelivery = () => {
 
     // --- LOGIC FILTERING (SEARCH + DATE HANDOVER) ---
     const filteredData = useMemo(() => {
-        const lowerSearch = searchText.toLowerCase();
+        const lowerSearch = (searchText || "").toLowerCase();
 
         return data
             .map((bundle) => {
@@ -232,6 +238,101 @@ const MKTFromDelivery = () => {
         }
     };
 
+    const handleSearch = (selectedKeys, confirm, dataIndex) => {
+        confirm();
+        setSearchText(selectedKeys[0]);
+        setSearchedColumn(dataIndex);
+    };
+
+    const handleReset = (clearFilters) => {
+        clearFilters();
+        setSearchText("");
+    };
+
+    const getColumnSearchProps = (dataIndex) => ({
+        filterDropdown: ({
+            setSelectedKeys,
+            selectedKeys,
+            confirm,
+            clearFilters,
+            close,
+        }) => (
+            <div style={{ padding: 8 }} onKeyDown={(e) => e.stopPropagation()}>
+                <Input
+                    ref={searchInput}
+                    placeholder={`Search ${dataIndex}`}
+                    value={selectedKeys[0]}
+                    onChange={(e) =>
+                        setSelectedKeys(e.target.value ? [e.target.value] : [])
+                    }
+                    onPressEnter={() => handleSearch(selectedKeys, confirm, dataIndex)}
+                    style={{ marginBottom: 8, display: "block" }}
+                />
+
+                <Space>
+                    <Button
+                        type="primary"
+                        onClick={() => handleSearch(selectedKeys, confirm, dataIndex)}
+                        icon={<SearchOutlined />}
+                        size="small"
+                        style={{ width: 90 }}
+                    >
+                        Search
+                    </Button>
+
+                    <Button
+                        onClick={() => clearFilters && handleReset(clearFilters)}
+                        size="small"
+                        style={{ width: 90 }}
+                    >
+                        Reset
+                    </Button>
+
+                    <Button
+                        type="link"
+                        size="small"
+                        onClick={() => {
+                            confirm({ closeDropdown: false });
+                            setSearchText(selectedKeys[0]);
+                            setSearchedColumn(dataIndex);
+                        }}
+                    >
+                        Filter
+                    </Button>
+
+                    <Button type="link" size="small" onClick={() => close()}>
+                        Close
+                    </Button>
+                </Space>
+            </div>
+        ),
+        filterIcon: (filtered) => (
+            <SearchOutlined style={{ color: filtered ? "#1677ff" : undefined }} />
+        ),
+        onFilter: (value, record) =>
+            record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
+
+        filterDropdownProps: {
+            onOpenChange(open) {
+                if (open) {
+                    setTimeout(() => searchInput.current?.select(), 100);
+                }
+            },
+        },
+
+        render: (text) =>
+            searchedColumn === dataIndex ? (
+                <Highlighter
+                    highlightStyle={{ backgroundColor: "#ffc069", padding: 0 }}
+                    searchWords={[searchText]}
+                    autoEscape
+                    textToHighlight={text ? text.toString() : ""}
+                />
+            ) : (
+                text
+            ),
+    });
+
     const shipmentColumns = () => [
         {
             title: 'Check', key: 'action', width: 100, render: (_, record) => (
@@ -256,8 +357,24 @@ const MKTFromDelivery = () => {
             },
         },
         { title: 'No', key: 'no', width: 70, render: (_, __, index) => index + 1 },
-        { title: 'Bundle No', dataIndex: 'bundleNo', key: 'bundleNo' },
-        { title: 'Date Handover', dataIndex: 'created', key: 'created', render: (text) => DateTime.fromISO(text).plus({ hours: 7 }).toFormat('dd-MM-yyyy HH:mm') },
+        {
+            title: 'Bundle No',
+            dataIndex: 'bundleNo',
+            key: 'bundleNo',
+            ...getColumnSearchProps("bundleNo"),
+        },
+        {
+            title: 'Date Handover',
+            dataIndex: 'created',
+            key: 'created',
+            render: (text) => DateTime.fromISO(text).plus({ hours: 7 }).toFormat('dd-MM-yyyy HH:mm')
+        },
+        {
+            title: 'Customer',
+            dataIndex: 'customer',
+            key: 'customer',
+            ...getColumnSearchProps("customer"),
+        },
         { title: 'Total Shipments', dataIndex: 'shipments', key: 'shipments_count', render: (s) => <Tag color="blue">{s.length} Docs</Tag> }
     ];
 

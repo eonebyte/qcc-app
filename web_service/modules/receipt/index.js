@@ -1958,6 +1958,7 @@ class Receipt {
           const info = groupDataMap.get(gid);
           grouped[gid] = {
             bundleNo: info?.bundleNo || "N/A",
+            customer: item.customer,
             created: info?.created || null,
             shipments: [],
           };
