@@ -368,128 +368,95 @@ const ProgressShipment = () => {
     }
   };
 
-  const getMainStatus = (item) => {
-    if (item.has_cancel_log) return "CANCEL";
 
-    if (item.accept_fat_from_mkt) return "SELESAI (FAT)";
-    if (item.ho_mkt_to_fat) return "DI MARKETING";
-    if (item.accept_customer_from_driver) return "DITERIMA CUSTOMER";
-    if (item.ho_driver_to_customer) return "DI CUSTOMER";
-    if (item.ho_dpk_to_driver) return "DI DRIVER";
-
-    return "PROSES";
-  };
-
-  const getCancelSummary = (item) => {
-    if (!item.has_cancel_log) {
-      return {
-        cancel_reason: "-",
-        cancel_by: "-",
-        cancel_date: "-",
-      };
-    }
-
-    // fallback dari notes / notesmkt
-    return {
-      cancel_reason: item.notes || "-",
-      cancel_by: "SYSTEM",
-      cancel_date: "-",
-    };
-  };
 
   // --- HANDLE EXPORT EXCEL ---
+  // --- HANDLE EXPORT EXCEL COMPLETE TIMELINE ---
+  // --- HANDLE EXPORT EXCEL (AUDIT USER PERFORMANCE) ---
+  // --- HANDLE EXPORT EXCEL (USER & ROLE BASED) ---
+  // --- HANDLE EXPORT EXCEL (SYSTEM LOGIC BASED) ---
+  // --- HANDLE EXPORT EXCEL (HIDE ROLE 3 / DRIVER) ---
+  // --- HANDLE EXPORT EXCEL (AUTO-FILL DRIVER NAME) ---
   const handleExportExcel = async () => {
     setExportLoading(true);
     try {
-      // 1. Siapkan Parameter "Unlimited"
-      // Backend akan mendeteksi limit 0 sebagai instruksi untuk mengambil semua data
-      // dan menangani pemecahan query (chunking) secara internal.
-      const params = {
-        page: 0,
-        limit: 0,
-      };
-
-      // 2. Tambahkan Tanggal
-      if (dateRange && dateRange[0]) {
-        params.startDate = dateRange[0].format("YYYY-MM-DD");
-      }
-      if (dateRange && dateRange[1]) {
-        params.endDate = dateRange[1].format("YYYY-MM-DD");
-      }
-
-      // 3. Tambahkan Filter Pencarian
-      if (filtersState && Object.keys(filtersState).length > 0) {
-        Object.entries(filtersState).forEach(([key, value]) => {
-          if (value !== undefined && value !== null && value !== "") {
-            params[key] = value;
-          }
-        });
-      }
+      // 1. Setup Parameter (Sesuai filter aktif)
+      const params = { page: 0, limit: 0 };
+      if (dateRange?.[0]) params.startDate = dateRange[0].format("YYYY-MM-DD");
+      if (dateRange?.[1]) params.endDate = dateRange[1].format("YYYY-MM-DD");
+      if (filtersState) Object.assign(params, filtersState);
 
       const queryString = new URLSearchParams(params).toString();
-      console.log("Exporting All Data...", queryString);
 
-      // 4. Fetch Data
+      // 2. Fetch Data
       const res = await fetch(`${backEndUrl}/tms/history?${queryString}`, {
         credentials: "include",
       });
-
-      if (!res.ok) throw new Error("Gagal mengambil data untuk export");
+      if (!res.ok) throw new Error("Gagal mengambil data export");
       const result = await res.json();
 
-      // 5. Extract Data
       let rawData = [];
-      const candidates = [
-        result?.data?.data,
-        result?.data,
-        result?.items,
-        result?.result,
-        result,
-      ];
-      for (const c of candidates) {
-        if (Array.isArray(c)) {
-          rawData = c;
-          break;
-        }
-      }
+      const candidates = [result?.data?.data, result?.data, result?.items, result?.result, result];
+      for (const c of candidates) { if (Array.isArray(c)) { rawData = c; break; } }
 
-      if (!rawData || rawData.length === 0) {
-        Modal.warning({
-          title: "Tidak Ada Data",
-          content: "Tidak ada data untuk diexport.",
-        });
+      if (!rawData.length) {
+        message.warning("Tidak ada data untuk diexport.");
+        setExportLoading(false);
         return;
       }
 
-      // 6. Formatting Data Excel
-      const excelData = rawData.map((item, index) => ({
-        No: index + 1,
-        Customer: item.customer,
-        "No. Surat Jalan": item.documentno,
-        "Tanggal Plan": formatDateTime(item.plantime),
+      // 3. Transform Data (Mendapatkan array 'flow')
+      const transformedData = transformApiData(rawData, 1, rawData.length);
 
-        Status: getMainStatus(item),
+      // 4. Mapping ke format Excel
+      const excelData = transformedData.map((item, index) => {
 
-        "Cancel Logs": item.cancel_logs || "-",
-      }));
+        let currentStatusText = "-";
 
-      // 7. Generate Excel File
+        if (item.has_cancel_log) {
+          currentStatusText = "CANCEL / BATAL";
+        } else {
+          // LOGIKA BARU: Cari step 'in_progress' yang paling terakhir (paling kanan)
+          // Kita filter semua yang in_progress, lalu ambil yang terakhir di array
+          const activeSteps = item.flow.filter(s => s.status === "in_progress");
+
+          if (activeSteps.length > 0) {
+            const latestActiveStep = activeSteps[activeSteps.length - 1];
+            currentStatusText = `${latestActiveStep.title}: ${latestActiveStep.value}`;
+          } else {
+            // Jika tidak ada in_progress sama sekali, cek apakah sudah finish semua
+            const isAllFinished = item.flow.every(s => s.status === "completed");
+            currentStatusText = isAllFinished ? "SELESAI (FAT)" : "PROSES";
+          }
+        }
+
+        return {
+          "No": index + 1,
+          "Customer": item.customer || "-",
+          "No. Surat Jalan": item.docNo || "-",
+          "Tanggal Plan": item.planTime ? dayjs(item.planTime).format("DD-MM-YYYY") : "-",
+          "Status Saat Ini": currentStatusText,
+          "Status Cancel": item.has_cancel_log ? "YA" : "TIDAK",
+          "Alasan Cancel": item.has_cancel_log ? (rawData[index].notes || "-") : "-",
+        };
+      });
+
+      // 5. Generate File
       const worksheet = utils.json_to_sheet(excelData);
-      const wscols = Object.keys(excelData[0]).map(() => ({ wch: 20 }));
-      worksheet["!cols"] = wscols;
+      worksheet["!cols"] = [
+        { wch: 5 }, { wch: 25 }, { wch: 20 }, { wch: 15 },
+        { wch: 40 }, // Status Saat Ini
+        { wch: 12 }, { wch: 30 }
+      ];
 
       const workbook = utils.book_new();
-      utils.book_append_sheet(workbook, worksheet, "Shipment Report");
+      utils.book_append_sheet(workbook, worksheet, "Report");
+      writeFileXLSX(workbook, `Report_Shipment_${dayjs().format("YYYYMMDD")}.xlsx`);
 
-      const startDateName =
-        dateRange && dateRange[0] ? dateRange[0].format("YYYY-MM-DD") : "All";
-      const fileName = `Report_Shipment_${startDateName}.xlsx`;
-
-      writeFileXLSX(workbook, fileName);
-      message.success(`Berhasil export ${rawData.length} data ke Excel`);
+      message.success(`Export Berhasil.`);
     } catch (error) {
-      console.error("Export Error:", error);
-      message.error("Gagal melakukan export excel: " + error.message);
+      console.error(error);
+      message.error("Gagal export: " + error.message);
     } finally {
       setExportLoading(false);
     }

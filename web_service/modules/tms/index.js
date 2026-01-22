@@ -3031,6 +3031,7 @@ class TMS {
                     AND (mi.POREFERENCE NOT LIKE '%SAMPLE%' OR mi.POREFERENCE IS NULL)
                     AND cb.ISSUBCONTRACT = 'N'
                     AND co.ISMILKRUN = 'N'
+                    AND mi.C_DOCTYPE_ID = 1000011 -- mm shipment
                     ${oraDocFilter}
             `;
 
@@ -3248,7 +3249,7 @@ class TMS {
                         MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN created END) AS ho_driver_to_dpk,
                         MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS ho_driver_to_dpkby,
                         MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN created END) AS accept_dpk_from_driver,
-                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN username END) AS accept_dpk_from_driverby,
+                        MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'Driver' AND adw_to_actor = 'DPK' THEN ad_user_id END) AS accept_dpk_from_driverby,
                         MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN created END) AS ho_dpk_to_delivery,
                         MAX(CASE WHEN adw_event_type = 'HANDOVER' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN ad_user_id END) AS ho_dpk_to_deliveryby,
                         MAX(CASE WHEN adw_event_type = 'ACCEPTANCE' AND adw_from_actor = 'DPK' AND adw_to_actor = 'Delivery' THEN created END) AS accept_delivery_from_dpk,
@@ -3301,7 +3302,7 @@ class TMS {
                     user3.name AS ho_dpk_to_driverby_name,
                     pe.accept_driver_from_dpkby AS accept_driver_from_dpkby_name,
                     user5.name AS ho_driver_to_dpkby_name,
-                    pe.accept_dpk_from_driverby AS accept_dpk_from_driverby_name,
+                    user14.name AS accept_dpk_from_driverby_name,
                     user7.name AS ho_dpk_to_deliveryby_name,
                     user8.name AS accept_delivery_from_dpkby_name,
                     user9.name AS ho_delivery_to_mktby_name,
@@ -3324,6 +3325,7 @@ class TMS {
                 LEFT JOIN ad_user user11 ON pe.ho_mkt_to_fatby = user11.ad_user_id
                 LEFT JOIN ad_user user12 ON pe.accept_fat_from_mktby = user12.ad_user_id
                 LEFT JOIN ad_user user13 ON pe.ho_driver_to_customerby = user13.ad_user_id
+                LEFT JOIN ad_user user14 ON pe.accept_dpk_from_driverby = user14.ad_user_id
                 WHERE ats.m_inout_id = ANY($1::int[])
                 `;
         const resPg = await dbClient.query(queryPostgresDetail, [chunk]);
