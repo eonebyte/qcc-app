@@ -805,7 +805,6 @@ class Handover {
     const dbClient = await server.pg.connect();
 
     try {
-      await dbClient.query("BEGIN");
       let result;
 
       const { data, driverId, driverName, tnkbId, tnkbName } = payload;
@@ -813,6 +812,20 @@ class Handover {
       if (!data || !Array.isArray(data) || data.length === 0) {
         throw { statusCode: 400, message: "Data is required for handover." };
       }
+
+      // console.log("=== TEST PAYLOAD HANDOVER ===");
+      // console.log("data:", data);
+      // console.log("tnkbId:", tnkbId);
+      // console.log("tnkbName:", tnkbName);
+      // console.log("driverId:", driverId);
+      // console.log("driverName:", driverName);
+      // console.log("=============================");
+      // return;
+
+
+      await dbClient.query("BEGIN");
+
+
 
       const inoutIds = data.map((item) => item.m_inout_id);
 
@@ -875,7 +888,7 @@ class Handover {
             WHERE
                 m_inout_id = ANY($3::integer[])
                 AND checkpoin_id = $6
-            RETURNING adw_trackingsj_id, m_inout_id;
+            RETURNING adw_trackingsj_id, m_inout_id, tnkb_id;
         `;
 
       const updateValues = [
@@ -890,6 +903,9 @@ class Handover {
       ];
 
       const updateResult = await dbClient.query(updateQuery, updateValues);
+
+      console.log("UPDATE RESULT:", updateResult.rows);
+
 
       if (updateResult.rows.length === 0) {
         throw new Error(

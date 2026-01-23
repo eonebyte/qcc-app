@@ -515,6 +515,7 @@ export default function DPKToDriver() {
               value={selectedTnkb}
               onChange={setSelectedTnkb}
               showSearch
+              labelInValue
               optionFilterProp="children"
             >
               {tnkbs.map((tnkb) => (
@@ -527,6 +528,7 @@ export default function DPKToDriver() {
                 </Select.Option>
               ))}
             </Select>
+
           </div>
         </div>
       </Modal>
