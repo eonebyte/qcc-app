@@ -813,6 +813,7 @@ class Handover {
         throw { statusCode: 400, message: "Data is required for handover." };
       }
 
+      // digunakan untuk testing isi payload
       // console.log("=== TEST PAYLOAD HANDOVER ===");
       // console.log("data:", data);
       // console.log("tnkbId:", tnkbId);

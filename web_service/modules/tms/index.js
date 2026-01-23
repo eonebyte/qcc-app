@@ -4565,7 +4565,7 @@ class TMS {
                 AND t.checkpoin_id = '5'
                 AND t.trip_mode IS NULL
                 AND arrivedat_customer = 'N'
-                ORDER BY created ASC
+                ORDER BY created DESC
                 `;
 
       const resultPg = await dbClient.query(queryPostgres, [driverRow.rows[0].NAME]);
