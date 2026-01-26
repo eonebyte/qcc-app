@@ -1383,6 +1383,127 @@ class Handover {
     }
   }
 
+  async listCheckInCustomerBypass(server) {
+    let connection;
+    let dbClient;
+
+    if (!server) {
+      return { success: false, message: "Unable connection db" };
+    }
+
+    try {
+      dbClient = await server.pg.connect();
+      connection = await oracleDB.openConnection();
+
+      // -----------------------------------------------------------
+      // 1. AMBIL DATA DARI POSTGRES DULU (Source of Truth Status)
+      // -----------------------------------------------------------
+      const queryPostgres = `
+            SELECT adw_trackingsj_id, m_inout_id, checkpoin_id, driverby, tnkb_id, drivername, cancelrequest
+            FROM adw_trackingsj
+            WHERE checkpoin_id = '5'
+        `;
+
+      const resultPg = await dbClient.query(queryPostgres);
+      const pgRows = resultPg.rows || [];
+
+      if (pgRows.length === 0) {
+        return { success: true, count: 0, data: [] };
+      }
+
+      const pgMap = new Map(pgRows.map((row) => [Number(row.m_inout_id), row]));
+      const mInoutIds = [...new Set(pgRows.map((row) => Number(row.m_inout_id)))];
+
+      // -----------------------------------------------------------
+      // 2. AMBIL DETAIL DARI ORACLE DENGAN PENANGANAN LIMIT 1000 (ORA-01795)
+      // -----------------------------------------------------------
+
+      let oracleRows = [];
+      const chunkSize = 999; // Gunakan 999 untuk cari aman
+
+      // Looping untuk membagi array mInoutIds menjadi potongan kecil
+      for (let i = 0; i < mInoutIds.length; i += chunkSize) {
+        const chunk = mInoutIds.slice(i, i + chunkSize);
+
+        // Buat bind variables (:1, :2, dst) untuk chunk saat ini
+        const bindVars = chunk.map((_, idx) => `:${idx + 1}`).join(",");
+
+        const queryOracle = `
+            SELECT
+                mi.M_INOUT_ID,
+                mi.DOCUMENTNO,
+                cb.NAME AS CUSTOMER,
+                cb.VALUE AS CUSTOMERKEY,
+                TO_DATE(
+                    TO_CHAR(mi.MOVEMENTDATE, 'YYYY-MM-DD') || ' ' ||
+                    TO_CHAR(mi.PLANTIME, 'HH24:MI:SS'),
+                    'YYYY-MM-DD HH24:MI:SS'
+                ) AS PLANTIME
+            FROM
+                M_INOUT mi
+                INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
+            WHERE
+                mi.M_INOUT_ID IN (${bindVars})
+            ORDER BY mi.DOCUMENTNO DESC
+        `;
+
+        const resultChunk = await connection.execute(queryOracle, chunk, {
+          outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT,
+        });
+
+        if (resultChunk.rows) {
+          oracleRows = oracleRows.concat(resultChunk.rows);
+        }
+      }
+
+      // -----------------------------------------------------------
+      // 3. MAPPING HASIL AKHIR
+      // -----------------------------------------------------------
+      const finalData = oracleRows.map((row) => {
+        const pgInfo = pgMap.get(Number(row.M_INOUT_ID)) || {};
+        return {
+          m_inout_id: row.M_INOUT_ID,
+          documentno: row.DOCUMENTNO,
+          customer: row.CUSTOMER,
+          customerkey: row.CUSTOMERKEY,
+          plantime: row.PLANTIME,
+          checkpoin_id: 5,
+          adw_trackingsj_id: pgInfo.adw_trackingsj_id || null,
+          driverby: pgInfo.driverby || null,
+          tnkb_id: pgInfo.tnkb_id || null,
+          drivername: pgInfo.drivername || null,
+          cancelrequest: pgInfo.cancelrequest || null,
+        };
+      });
+
+      return {
+        success: true,
+        count: finalData.length,
+        data: finalData,
+      };
+
+    } catch (error) {
+      console.error("Error in listCheckInCustomerByPass:", error);
+      return { success: false, message: "Server error: " + error.message };
+    } finally {
+      // Pastikan koneksi ditutup
+      if (connection) {
+        try {
+          await connection.close();
+        } catch (e) {
+          console.error("Error closing Oracle connection:", e);
+        }
+      }
+      if (dbClient) {
+        try {
+          await dbClient.release();
+        } catch (e) {
+          console.error("Error releasing Postgres client:", e);
+        }
+      }
+    }
+  }
+
   async processDriverToCustomer(server, payload, userName) {
     const dbClient = await server.pg.connect();
 
@@ -1556,6 +1677,146 @@ class Handover {
           updatedRT: updatedTracking.length,
           updatedDO: DO_items.length,
           message: `RT: ${updatedTracking.length}, DO: ${DO_items.length}`,
+        };
+      }
+
+      await dbClient.query("COMMIT");
+      return result;
+    } catch (error) {
+      if (dbClient) await dbClient.query("ROLLBACK");
+      console.error("Transaction Error in processDPKToDriver:", error.message);
+      throw error;
+    } finally {
+      if (dbClient) await dbClient.release();
+    }
+  }
+
+  async processDriverToCustomerBypass(server, payload, userName) {
+    const dbClient = await server.pg.connect();
+
+    try {
+      await dbClient.query("BEGIN");
+
+      const { data, driverName, tnkbId, tripMode } = payload;
+
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        throw { statusCode: 400, message: "Data is required for handover." };
+      }
+
+      const RT_items = data.filter((item) => item.tripMode !== "DO"); //
+
+
+      let result = {};
+
+      if (RT_items.length > 0) {
+        const inoutIds = RT_items.map((item) => item.m_inout_id);
+
+        const seqRow = await dbClient.query(
+          `SELECT nextval('adw_handover_group_seq') AS seq`,
+        );
+        const seq = seqRow.rows[0].seq;
+
+        const yymm = new Date().toISOString().slice(2, 7).replace("-", "");
+        const documentno = `HIDT${yymm}${String(seq).padStart(4, "0")}`;
+
+        const insertGroupQuery = `
+                INSERT INTO adw_handover_group (
+                    createdby, documentno, checkpoint, notes, drivername, drivername_receipt, tnkb_id,
+                    fromactor, toactor
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING adw_handover_group_id;
+            `;
+
+        const groupRes = await dbClient.query(insertGroupQuery, [
+          0,
+          documentno,
+          "6",
+          "ho driver to dpk",
+          driverName,
+          userName,
+          tnkbId,
+          "Driver",
+          "DPK",
+        ]);
+
+        const groupId = groupRes.rows[0].adw_handover_group_id;
+
+        // Update trip_mode = RT
+        const updateQuery = `
+                UPDATE adw_trackingsj
+                SET checkpoin_id = $1, updated = NOW(), trip_mode = 'RT', arrivedat_customer = 'Y', drivername_receipt = $4
+                WHERE m_inout_id = ANY($2::integer[]) AND checkpoin_id = $3
+                RETURNING adw_trackingsj_id, m_inout_id;
+            `;
+
+        const updateResult = await dbClient.query(updateQuery, [
+          "6",
+          inoutIds,
+          "5",
+          userName
+        ]);
+
+        const updatedTracking = updateResult.rows;
+
+        const eventDriverToCustQuery = `
+                INSERT INTO adw_trackingsj_events(
+                    ad_client_id, ad_org_id, username,
+                    adw_event_type, adw_from_actor, adw_to_actor,
+                    adw_trackingsj_id, created, isactive,
+                    updated, checkpoin_id
+                ) VALUES
+                (
+                    1000003, 1000003, $1,
+                    'HANDOVER', 'Driver', 'Customer',
+                    $2, NOW(), 'Y', NOW(), $3
+                ),
+                (
+                    1000003, 1000003, $1,
+                    'ACCEPTANCE', 'Driver', 'Customer',
+                    $2, NOW(), 'Y', NOW(), $3
+                );
+            `;
+
+        const eventDriverToDPKQuery = `
+                INSERT INTO adw_trackingsj_events(
+                    ad_client_id, ad_org_id, username,
+                    adw_event_type, adw_from_actor, adw_to_actor,
+                    adw_trackingsj_id, created, isactive,
+                    updated, checkpoin_id
+                ) VALUES (
+                    1000003, 1000003, $1,
+                    'HANDOVER', 'Driver', 'DPK',
+                    $2, NOW(), 'Y', NOW(), $3
+                );
+            `;
+
+        const insertPivotQuery = `
+                INSERT INTO adw_group_sj (
+                    adw_handover_group_id, adw_trackingsj_id, checkpoint
+                ) VALUES ($1, $2, $3);
+            `;
+
+        for (const row of updatedTracking) {
+          const trackingId = row.adw_trackingsj_id;
+
+          await dbClient.query(insertPivotQuery, [groupId, trackingId, "5"]);
+          await dbClient.query(eventDriverToCustQuery, [
+            userName,
+            trackingId,
+            "5",
+          ]);
+          await dbClient.query(eventDriverToDPKQuery, [
+            userName,
+            trackingId,
+            "5",
+          ]);
+        }
+
+        result = {
+          handover_group_id: groupId,
+          documentno,
+          updatedRT: updatedTracking.length,
+          message: `RT: ${updatedTracking.length}`,
         };
       }
 

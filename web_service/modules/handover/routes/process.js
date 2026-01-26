@@ -47,6 +47,18 @@ export default async (server, opts) => {
         }
     });
 
+    server.post('/process/driver/to/customer/bypass', async (request, reply) => {
+        try {
+            const body = request.body;
+            const userName = request.user.name;
+            const to_dpk = await server.handover.processDriverToCustomerBypass(server, body, userName);
+            reply.send({ message: 'fetch successfully', data: to_dpk });
+        } catch (error) {
+            request.log.error(error);
+            reply.status(500).send({ message: `Failed: ${error.message || error}` });
+        }
+    });
+
     server.post('/process/driver/to/customer/do', async (request, reply) => {
         try {
             const body = request.body;

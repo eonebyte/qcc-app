@@ -52,6 +52,11 @@ const items = [
                 roles: ['dpk', 'admin']
             },
             {
+                key: '/handover/checkin/customer/bypass',
+                label: 'Check Out (Bypass)',
+                roles: ['dpk', 'admin']
+            },
+            {
                 key: '/receipt/driver/from/dpk',
                 label: 'from DPK',
                 roles: ['driver', 'admin']

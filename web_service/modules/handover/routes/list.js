@@ -51,6 +51,16 @@ export default async (server, opts) => {
         }
     });
 
+    server.get('/list/checkin/customer/bypass', async (request, reply) => {
+        try {
+            const result = await server.handover.listCheckInCustomerBypass(server);
+            reply.send({ message: 'fetch successfully', data: result });
+        } catch (error) {
+            request.log.error(error);
+            reply.status(500).send({ message: `Failed: ${error.message || error}` });
+        }
+    });
+
 
     server.get('/list/dpk/to/delivery', async (request, reply) => {
         try {

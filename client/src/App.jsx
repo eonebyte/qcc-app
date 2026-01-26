@@ -45,6 +45,8 @@ import PinSetupPopup from "./components/popups/PinSetupPopUp";
 import useIsMobile from "./hooks/useIsMobile";
 import ReloadPrompt from "./components/ReloadPromp";
 import DriverReceiptSJOut from "./pages/tms/Receipt/DriverReceiptSJOut";
+import DPKFromDriverBypass from "./pages/tms/Handover/CheckoutBypass";
+import CheckoutBypass from "./pages/tms/Handover/CheckoutBypass";
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 function App() {
@@ -124,6 +126,7 @@ function App() {
     }
   };
 
+
   // return <SupplyRawMaterial />;
   return (
     <>
@@ -160,6 +163,7 @@ function App() {
         DriverReceiptSJOut
 
         <Route path="/handover/checkin/customer" element={<CheckOut />} />
+        <Route path="/handover/checkin/customer/bypass" element={<CheckoutBypass />} />
         <Route path="/handover/checkout/droponly" element={<DropOnly />} />
         <Route path="/receipt/dpk/from/driver" element={<DPKFromDriver />} />
 
