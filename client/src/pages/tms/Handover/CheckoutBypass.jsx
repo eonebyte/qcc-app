@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Button, Input, Space, Table, Modal, message, Switch, notification, Tag } from "antd";
-import { CheckCircleOutlined, CloseOutlined, SearchOutlined, SendOutlined } from "@ant-design/icons";
+import { Button, Input, Space, Table, Modal, message, Switch, notification, Tag, DatePicker, Card } from "antd";
+import { CheckCircleOutlined, CloseOutlined, SearchOutlined, SendOutlined, ReloadOutlined } from "@ant-design/icons";
 import Highlighter from "react-highlight-words";
 import dayjs from "dayjs";
+import isBetween from "dayjs/plugin/isBetween";
 import axios from "axios";
 import { useDispatch, useSelector } from "react-redux";
 import { setCustomers } from "../../../states/reducers/customerSlice";
@@ -10,56 +11,36 @@ import LayoutGlobal from "../../../components/layouts/LayoutGlobal";
 import useIsMobile from "../../../hooks/useIsMobile";
 import CheckOutMobile from "./CheckOutMobile";
 
+dayjs.extend(isBetween);
 const { TextArea } = Input;
+const { RangePicker } = DatePicker;
 
 const backEndUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3200";
 
 export default function CheckoutBypass() {
   const dispatch = useDispatch();
-
   const isMobile = useIsMobile();
-
-  const user = useSelector((state) => state.auth.user);
-  // const userId = user.ad_user_id;
-  const userName = user.name;
-
-
-  const [noteCancel, setNoteCancel] = useState("");
-
-
 
   const [tableData, setTableData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
+  // Filter States
+  const [searchNoSJ, setSearchNoSJ] = useState("");
+  const [searchDateRange, setSearchDateRange] = useState(null);
 
-  // const [driver, setDriver] = useState(null);
-  // const [tnkb, setTnkb] = useState(null);
-
-
-  const [pagination, setPagination] = useState({
-    current: 1,
-    pageSize: 10
-  });
-
-
-  // selected rows
+  // Table Selection & Modal States
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  const [selectedRowsDropOnly, setSelectedRowsDropOnly] = useState([]);
   const [selectedRows, setSelectedRows] = useState([]);
-
-
-  // modal
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  // SEARCH
   const [searchText, setSearchText] = useState("");
   const [searchedColumn, setSearchedColumn] = useState("");
   const searchInput = useRef(null);
-
-
   const [isModalCancelOpen, setIsModalCancelopen] = useState(false);
   const [itemToCancel, setItemToCancel] = useState(null);
+  const [noteCancel, setNoteCancel] = useState("");
 
+  // ================== SEARCH COLUMN PROPS ==================
   const handleSearch = (selectedKeys, confirm, dataIndex) => {
     confirm();
     setSearchText(selectedKeys[0]);
@@ -82,92 +63,85 @@ export default function CheckoutBypass() {
           onPressEnter={() => handleSearch(selectedKeys, confirm, dataIndex)}
           style={{ marginBottom: 8, display: "block" }}
         />
-
         <Space>
-          <Button
-            type="primary"
-            onClick={() => handleSearch(selectedKeys, confirm, dataIndex)}
-            icon={<SearchOutlined />}
-            size="small"
-            style={{ width: 90 }}
-          >
-            Search
-          </Button>
-
-          <Button
-            onClick={() => clearFilters && handleReset(clearFilters)}
-            size="small"
-            style={{ width: 90 }}
-          >
-            Reset
-          </Button>
-
-          <Button
-            type="link"
-            size="small"
-            onClick={() => {
-              confirm({ closeDropdown: false });
-              setSearchText(selectedKeys[0]);
-              setSearchedColumn(dataIndex);
-            }}
-          >
-            Filter
-          </Button>
-
-          <Button type="link" size="small" onClick={() => close()}>
-            Close
-          </Button>
+          <Button type="primary" onClick={() => handleSearch(selectedKeys, confirm, dataIndex)} icon={<SearchOutlined />} size="small" style={{ width: 90 }}>Search</Button>
+          <Button onClick={() => clearFilters && handleReset(clearFilters)} size="small" style={{ width: 90 }}>Reset</Button>
+          <Button type="link" size="small" onClick={() => close()}>Close</Button>
         </Space>
       </div>
     ),
-    filterIcon: (filtered) => (
-      <SearchOutlined style={{ color: filtered ? "#1677ff" : undefined }} />
-    ),
-    onFilter: (value, record) =>
-      record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
-
-    filterDropdownProps: {
-      onOpenChange(open) {
-        if (open) {
-          setTimeout(() => searchInput.current?.select(), 100);
-        }
-      },
-    },
-
-    render: (text) =>
-      searchedColumn === dataIndex ? (
-        <Highlighter
-          highlightStyle={{ backgroundColor: "#ffc069", padding: 0 }}
-          searchWords={[searchText]}
-          autoEscape
-          textToHighlight={text ? text.toString() : ""}
-        />
-      ) : (
-        text
-      ),
+    filterIcon: (filtered) => <SearchOutlined style={{ color: filtered ? "#1677ff" : undefined }} />,
+    onFilter: (value, record) => record[dataIndex]?.toString().toLowerCase().includes(value.toLowerCase()),
+    render: (text) => searchedColumn === dataIndex ? (
+      <Highlighter highlightStyle={{ backgroundColor: "#ffc069", padding: 0 }} searchWords={[searchText]} autoEscape textToHighlight={text ? text.toString() : ""} />
+    ) : (text),
   });
 
+  // ================== FETCH DATA ==================
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch(`${backEndUrl}/handover/list/checkin/customer/bypass`, { credentials: "include" });
+      const json = await resp.json();
 
-  const showModalCancel = (shipment) => {
-    setItemToCancel(shipment);
-    setIsModalCancelopen(true);
+      const rawList = json?.data?.data || [];
+
+      const mapped = rawList.map((row, index) => ({
+        key: row.m_inout_id,
+        adw_trackingsj_id: row.adw_trackingsj_id,
+        m_inout_id: row.m_inout_id,
+        no: index + 1,
+        documentno: row.documentno,
+        customer: row.customer,
+        plantime: row.plantime, // Simpan format asli untuk filter date
+        checkpoin_id: row.checkpoin_id,
+        driverby: row.driverby,
+        drivername: row.drivername,
+        tnkb_id: row.tnkb_id,
+        cancelrequest: row.cancelrequest,
+      }));
+
+      const customersOnly = [...new Set(mapped.map(r => r.customer))];
+      dispatch(setCustomers(customersOnly));
+      setTableData(mapped);
+    } catch (err) {
+      console.error("Fetch error:", err);
+      message.error("Gagal memuat data");
+    } finally {
+      setLoading(false);
+    }
   };
 
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-  // ================== TABLE COLUMNS ==================
+  // ================== LOGIC FILTERING (CLIENT SIDE) ==================
+  const filteredData = tableData.filter((item) => {
+    // Filter No SJ (Document No)
+    const matchNoSJ = item.documentno?.toLowerCase().includes(searchNoSJ.toLowerCase());
+
+    // Filter Tanggal (Plan Time)
+    let matchDate = true;
+    if (searchDateRange && searchDateRange[0] && searchDateRange[1]) {
+      const start = searchDateRange[0].startOf("day");
+      const end = searchDateRange[1].endOf("day");
+      const itemDate = dayjs(item.plantime);
+      matchDate = itemDate.isBetween(start, end, null, "[]");
+    }
+
+    return matchNoSJ && matchDate;
+  });
+
+  // ================== COLUMNS DEFINITION ==================
   const columns = [
     {
       title: "No",
-      dataIndex: "no",
-      key: "no",
       width: 60,
-      render: (_text, _record, index) => {
-        const { current, pageSize } = pagination;
-        return (current - 1) * pageSize + index + 1;
-      }
+      render: (_text, _record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
     },
     {
-      title: "Document No",
+      title: "No SJ / Doc No",
       dataIndex: "documentno",
       key: "documentno",
       ...getColumnSearchProps("documentno"),
@@ -188,285 +162,142 @@ export default function CheckoutBypass() {
       title: "Plan Time",
       dataIndex: "plantime",
       key: "plantime",
-      ...getColumnSearchProps("plantime"),
-      render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-',
+      render: (text) => (text ? dayjs(text).format("DD-MM-YYYY HH:mm") : "-"),
+      sorter: (a, b) => dayjs(a.plantime).unix() - dayjs(b.plantime).unix(),
     },
     {
       title: "Actions",
-      key: "actions",
       width: 120,
-      render: (_, record) => {
-        if (record.cancelrequest == 'N') {
-          return (<Button onClick={() => showModalCancel(record)}
-            icon={<CloseOutlined />} size='small' danger>Cancel</Button>)
-        } else {
-          return (<Tag color={"warning"} variant={'solid'}>
-            Waiting
-          </Tag>)
-        }
-
-
-      }
-    }
-
+      render: (_, record) => (
+        record.cancelrequest === "N" ? (
+          <Button onClick={() => { setItemToCancel(record); setIsModalCancelopen(true); }} icon={<CloseOutlined />} size="small" danger>Cancel</Button>
+        ) : (
+          <Tag color="warning">Waiting</Tag>
+        )
+      ),
+    },
   ];
 
-  // ================== FETCH DATA API ==================
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const resp = await fetch(
-        `${backEndUrl}/handover/list/checkin/customer/bypass`,
-        { credentials: "include" },
-      );
-      const json = await resp.json();
-
-      // Debug: Cek di console browser apakah data benar-benar sampai dan apa isinya
-      console.log("Raw Response:", json);
-      console.log("User Name Redux:", userName);
-
-      // Ambil array dari json.data.data (sesuai struktur response Anda)
-      const rawList = json?.data?.data || [];
-
-      const mapped = rawList.map((row, index) => ({
-        key: row.m_inout_id, // Gunakan ID unik
-        adw_trackingsj_id: row.adw_trackingsj_id,
-        m_inout_id: row.m_inout_id,
-        no: index + 1,
-        documentno: row.documentno,
-        customer: row.customer,
-        // Perbaikan parsing tanggal agar aman jika plantime null
-        plantime: row.plantime ? dayjs(row.plantime).format("YYYY-MM-DD HH:mm") : "-",
-        checkpoin_id: row.checkpoin_id,
-        driverby: row.driverby,
-        drivername: row.drivername,
-        tnkb_id: row.tnkb_id,
-        cancelrequest: row.cancelrequest,
-      }));
-
-      const customersOnly = [...new Set(mapped.map(r => r.customer))];
-      dispatch(setCustomers(customersOnly));
-
-      setTableData(mapped);
-    } catch (err) {
-      console.error("Fetch error:", err);
-      message.error("Gagal memuat data: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  // ================== ROW SELECTION ==================
   const rowSelection = {
     selectedRowKeys,
-    onChange: (selectedKeys, selectedRows) => {
-      setSelectedRowKeys(selectedKeys);
-      setSelectedRows(selectedRows);
+    onChange: (keys, rows) => {
+      setSelectedRowKeys(keys);
+      setSelectedRows(rows);
     },
   };
 
-  // ================== OPEN MODAL ==================
-  const openHandoverModal = () => {
-    if (selectedRows.length === 0) {
-      message.warning("Pilih minimal 1 row.");
-      return;
-    }
-    setIsModalOpen(true);
-  };
-
-  const validateSelection = (rows) => {
-    if (!rows || rows.length === 0) return "Tidak ada data dipilih.";
-
-    // const firstDriver = rows[0].drivername;
-    // const firstTnkb = rows[0].tnkb_id;
-
-    // if (!rows.every(row => row.drivername === firstDriver))
-    //     return "Driver harus sama.";
-
-    // if (!rows.every(row => row.tnkb_id === firstTnkb))
-    //     return "TNKB harus sama.";
-
-    return null;
-  };
-
-  const submitRoundTrip = async () => {
-    const error = validateSelection(selectedRows);
-    if (error) {
-      message.error(error);
-      return;
-    }
-
-    let combinedData = [...selectedRows];
-
-    console.log('to trip or drop : ', selectedRows);
-    console.log('drop only : ', selectedRowsDropOnly);
-
-    if (combinedData.length === 0) {
-      message.error("Tidak ada data yang dipilih");
-      return;
-    }
-
-    const payload = {
-      driverName: selectedRows[0].drivername,
-      tnkbId: Number(selectedRows[0].tnkb_id),
-      data: combinedData
-    };
-
-    return fetch(`${backEndUrl}/handover/process/driver/to/customer/bypass`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      credentials: "include"
-    });
-  };
-
-  // ================== SUBMIT TO BACKEND ==================
   const handleSubmit = async () => {
     try {
-      const resp1 = await submitRoundTrip();
+      const payload = {
+        driverName: selectedRows[0].drivername,
+        tnkbId: Number(selectedRows[0].tnkb_id),
+        data: selectedRows.map(r => ({ ...r, tripMode: "RT" }))
+      };
 
-      if (resp1?.ok) console.log("RT OK");
+      const resp = await fetch(`${backEndUrl}/handover/process/driver/to/customer/bypass`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        credentials: "include"
+      });
 
-      message.success("Checkout berhasil!");
-      setIsModalOpen(false);
-      setSelectedRows([]);
-      setSelectedRowKeys([]);
-      setSelectedRowsDropOnly([]);
-
-      fetchData();
+      if (resp.ok) {
+        message.success("Checkout berhasil!");
+        setIsModalOpen(false);
+        setSelectedRows([]);
+        setSelectedRowKeys([]);
+        fetchData();
+      }
     } catch (err) {
-      console.error(err);
       message.error("Terjadi error saat checkout.");
     }
   };
 
-  const handleCancelOk = async () => {
-    try {
+  return isMobile ? <CheckOutMobile /> : (
+    <LayoutGlobal>
+      {/* FILTER CARD */}
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <Space wrap>
+          <div>
+            <div style={{ fontSize: "12px", marginBottom: "4px" }}>No SJ:</div>
+            <Input
+              placeholder="Cari No SJ..."
+              value={searchNoSJ}
+              onChange={(e) => setSearchNoSJ(e.target.value)}
+              style={{ width: 200 }}
+              allowClear
+            />
+          </div>
+          <div>
+            <div style={{ fontSize: "12px", marginBottom: "4px" }}>Tanggal Plan:</div>
+            <RangePicker
+              onChange={(dates) => setSearchDateRange(dates)}
+              format="DD-MM-YYYY"
+            />
+          </div>
+          <div style={{ alignSelf: "flex-end" }}>
+            <Button icon={<ReloadOutlined />} onClick={fetchData}>Refresh</Button>
+          </div>
+        </Space>
+      </Card>
 
-      const payload = {
-        itemToCancel,
-        noteCancel
-      }
+      <Table
+        rowSelection={rowSelection}
+        columns={columns}
+        dataSource={filteredData}
+        bordered
+        loading={loading}
+        pagination={{
+          ...pagination,
+          total: filteredData.length,
+          onChange: (page, pageSize) => setPagination({ current: page, pageSize }),
+        }}
+      />
 
-      const res = await axios.post(`${backEndUrl}/tms/req/cancel`, payload, { withCredentials: true });
-
-      if (res.data.success) {
-        notification.success({ message: 'Info', description: `Dokumen ${payload.itemToCancel.documentno} akan diproses untuk dicancel.` });
-        fetchData();
-      } else {
-        notification.error({ message: 'Gagal', description: res.data.message || 'Terjadi kesalahan.' });
-      }
-    } catch (error) {
-      console.error("Submit error:", error);
-      notification.error({ message: 'cancel Gagal', description: error.response?.data?.message || 'Silakan coba lagi.' });
-    } finally {
-      setIsModalCancelopen(false);
-      setItemToCancel(null);
-      setNoteCancel("")
-    }
-
-  };
-
-  const handleCancelClose = () => {
-    setIsModalCancelopen(false);
-    setItemToCancel(null);
-  };
-
-  useEffect(() => {
-    if (isModalOpen) {
-      const updated = selectedRows.map(r => ({
-        ...r,
-        tripMode: r.tripMode || "RT"   // default "DO"
-      }));
-      setSelectedRows(updated);
-    }
-  }, [isModalOpen]);
-
-
-  // ================== OPEN MODAL ==================
-  return isMobile ? <CheckOutMobile /> :
-    <>
-      <LayoutGlobal>
-        <Table
-          rowSelection={rowSelection}
-          columns={columns}
-          dataSource={tableData}
-          bordered
-          loading={loading}
-          pagination={{
-            ...pagination,
-            total: tableData.length,
-            onChange: (page, pageSize) => {
-              setPagination({ current: page, pageSize });
-            }
-          }}
-        />
-
-        {/* BUTTON HANDOVER */}
-        <div style={{ marginTop: 16 }}>
-          <Button
-            style={{ margin: 15 }}
-            type="primary"
-            disabled={selectedRows.length === 0}
-            onClick={openHandoverModal}
-            icon={<SendOutlined />}
-          >
-            Penyerahan
-          </Button>
-        </div>
-
-        {/* MODAL CONFIRMATION */}
-        <Modal
-          title="Confirm Check Out"
-          open={isModalOpen}
-          onCancel={() => setIsModalOpen(false)}
-          onOk={handleSubmit}
-          okText="Submit"
-          cancelText="Cancel"
-          width={800}
+      <div style={{ marginTop: 16 }}>
+        <Button
+          type="primary"
+          disabled={selectedRows.length === 0}
+          onClick={() => setIsModalOpen(true)}
+          icon={<SendOutlined />}
         >
-          <p>Apakah Anda yakin ingin submit berikut:</p>
+          Penyerahan ({selectedRows.length})
+        </Button>
+      </div>
 
-          <ul>
-            {selectedRows.map(r => (
-              <li key={r.key}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: 8,
-                  alignItems: "center",
-                  listStyle: "none"
-                }}>
-                <Space>
-                  <CheckCircleOutlined />
-                  <span><strong>{r.documentno}</strong></span>
-                </Space>
-              </li>
-            ))}
-          </ul>
-        </Modal>
+      {/* MODAL CONFIRM */}
+      <Modal
+        title="Confirm Check Out"
+        open={isModalOpen}
+        onCancel={() => setIsModalOpen(false)}
+        onOk={handleSubmit}
+        okText="Submit"
+      >
+        <p>Anda akan memproses <strong>{selectedRows.length}</strong> dokumen.</p>
+        <ul style={{ maxHeight: '200px', overflowY: 'auto' }}>
+          {selectedRows.map(r => <li key={r.key}>{r.documentno} - {r.customer}</li>)}
+        </ul>
+      </Modal>
 
-        <Modal
-          title="Confirm cancel"
-          open={isModalCancelOpen}
-          onOk={handleCancelOk}
-          onCancel={handleCancelClose}
-          okButtonProps={{ disabled: !noteCancel?.trim() }} // <- disable ketika kosong
-        >
-          <p>Apakah Anda yakin akan mecancel dokumen <strong>{itemToCancel?.documentno}</strong>?</p>
-
-          Notes:
-          <TextArea rows={4}
-            value={noteCancel}
-            onChange={(e) => setNoteCancel(e.target.value)} />
-        </Modal>
-      </LayoutGlobal>
-    </>
-    ;
+      {/* MODAL CANCEL */}
+      <Modal
+        title="Confirm Cancel"
+        open={isModalCancelOpen}
+        onOk={async () => {
+          const res = await axios.post(`${backEndUrl}/tms/req/cancel`, { itemToCancel, noteCancel }, { withCredentials: true });
+          if (res.data.success) {
+            notification.success({ message: 'Berhasil', description: 'Request cancel dikirim' });
+            fetchData();
+          }
+          setIsModalCancelopen(false);
+          setNoteCancel("");
+        }}
+        onCancel={() => setIsModalCancelopen(false)}
+        okButtonProps={{ disabled: !noteCancel.trim() }}
+      >
+        <p>Alasan cancel untuk <strong>{itemToCancel?.documentno}</strong>:</p>
+        <TextArea rows={4} value={noteCancel} onChange={(e) => setNoteCancel(e.target.value)} />
+      </Modal>
+    </LayoutGlobal>
+  );
 }
