@@ -862,23 +862,22 @@ class Receipt {
       //      Tapi JOIN pivot agar dapat group ID
       // ---------------------------------------------------------
       const queryPostgres = `
-                SELECT
-                    t.m_inout_id,
-                    t.drivername,
-                    t.adw_trackingsj_id,
-                    t.checkpoin_id,
-                    gs.adw_handover_group_id
-                FROM adw_trackingsj t
-                LEFT JOIN adw_group_sj gs ON gs.adw_trackingsj_id = t.adw_trackingsj_id
-                LEFT JOIN adw_handover_group hg ON hg.adw_handover_group_id = gs.adw_handover_group_id
-                WHERE t.checkpoin_id = $1
-                AND hg.checkpoint = $1   -- Tambahan penting
-                AND hg.attachment IS NULL
-                ORDER BY t.documentno DESC
-            `;
+              SELECT
+                  t.m_inout_id,
+                  t.drivername,
+                  t.adw_trackingsj_id,
+                  t.checkpoin_id,
+                  gs.adw_handover_group_id
+              FROM adw_trackingsj t
+              LEFT JOIN adw_group_sj gs ON gs.adw_trackingsj_id = t.adw_trackingsj_id
+              LEFT JOIN adw_handover_group hg ON hg.adw_handover_group_id = gs.adw_handover_group_id
+              WHERE t.checkpoin_id = $1
+              AND hg.checkpoint = $1   -- Tambahan penting
+              AND hg.attachment IS NULL
+              ORDER BY t.documentno DESC
+          `;
 
       const resultPg = await dbClient.query(queryPostgres, ["4"]);
-
       const postgresRows = resultPg.rows || [];
 
       if (postgresRows.length === 0) {
@@ -887,32 +886,45 @@ class Receipt {
 
       // ---------------------------------------------------------
       // 2️⃣ Ambil detail SJ dari Oracle berdasarkan m_inout_id
+      //    SOLUSI ORA-01795: Pecah array menjadi chunk maksimal 1000
       // ---------------------------------------------------------
       const inoutIds = postgresRows.map((r) => r.m_inout_id);
+      const oracleRows = [];
+      const chunkSize = 1000;
 
-      const oracleQuery = `
-            SELECT
-                mi.M_INOUT_ID,
-                mi.DOCUMENTNO,
-                cb.VALUE AS CUSTOMERKEY,
-                cb.NAME AS CUSTOMER,
-                TO_DATE(
-                    TO_CHAR(MOVEMENTDATE, 'YYYY-MM-DD') || ' ' || TO_CHAR(PLANTIME, 'HH24:MI:SS'),
-                    'YYYY-MM-DD HH24:MI:SS'
-                ) AS PLANTIME,
-                SPPNO
-            FROM M_INOUT mi
-            INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
-            WHERE mi.M_INOUT_ID IN (${inoutIds.map((_, i) => `:${i + 1}`).join(",")})
-            ORDER BY mi.DOCUMENTNO DESC
-            `;
+      for (let i = 0; i < inoutIds.length; i += chunkSize) {
+        const chunk = inoutIds.slice(i, i + chunkSize);
 
-      const oracleRows = await connection.execute(oracleQuery, inoutIds, {
-        outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT,
-      });
+        // Generate placeholders untuk chunk saat ini (:1, :2, dst)
+        const placeholders = chunk.map((_, idx) => `:${idx + 1}`).join(",");
+
+        const oracleQuery = `
+          SELECT
+              mi.M_INOUT_ID,
+              mi.DOCUMENTNO,
+              cb.VALUE AS CUSTOMERKEY,
+              cb.NAME AS CUSTOMER,
+              TO_DATE(
+                  TO_CHAR(MOVEMENTDATE, 'YYYY-MM-DD') || ' ' || TO_CHAR(PLANTIME, 'HH24:MI:SS'),
+                  'YYYY-MM-DD HH24:MI:SS'
+              ) AS PLANTIME,
+              SPPNO
+          FROM M_INOUT mi
+          INNER JOIN C_BPARTNER cb ON mi.C_BPARTNER_ID = cb.C_BPARTNER_ID
+          WHERE mi.M_INOUT_ID IN (${placeholders})
+          ORDER BY mi.DOCUMENTNO DESC
+      `;
+
+        const result = await connection.execute(oracleQuery, chunk, {
+          outFormat: oracleDB.instanceOracleDB.OUT_FORMAT_OBJECT,
+        });
+
+        // Gabungkan hasil setiap chunk ke dalam array utama
+        oracleRows.push(...result.rows);
+      }
 
       const oracleMap = new Map(
-        oracleRows.rows.map((row) => [String(row.M_INOUT_ID), row]),
+        oracleRows.map((row) => [String(row.M_INOUT_ID), row]),
       );
 
       // ---------------------------------------------------------
@@ -945,14 +957,14 @@ class Receipt {
 
       if (groupIds.length > 0) {
         const groupQuery = `
-                SELECT
-                    adw_handover_group_id,
-                    documentno,
-                    created,
-                    drivername
-                FROM adw_handover_group
-                WHERE adw_handover_group_id = ANY($1::int[])
-                `;
+              SELECT
+                  adw_handover_group_id,
+                  documentno,
+                  created,
+                  drivername
+              FROM adw_handover_group
+              WHERE adw_handover_group_id = ANY($1::int[])
+              `;
 
         const groupRows = await dbClient.query(groupQuery, [groupIds]);
         groupRows.rows.forEach((row) => {
@@ -996,11 +1008,17 @@ class Receipt {
         data: finalData,
       };
     } catch (err) {
-      console.error(err);
-      return { success: false, message: "Server error" };
+      console.error("Error in listDriverFromDPK2:", err);
+      return { success: false, message: "Server error: " + err.message };
     } finally {
-      if (connection) await connection.close();
-      if (dbClient) await dbClient.release();
+      if (connection) {
+        try {
+          await connection.close();
+        } catch (e) {
+          console.error("Error closing Oracle connection:", e);
+        }
+      }
+      if (dbClient) dbClient.release();
     }
   }
 
